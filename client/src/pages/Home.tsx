@@ -457,8 +457,8 @@ export default function Home() {
               <div className="space-y-3">
                 <Label className="text-xs uppercase text-red-500 font-bold">地幔层参数</Label>
                 <ParamControl label="能量等级" paramKey="mantleEnergyLevel" min={1} max={100} step={1} />
-                <ParamControl label="扩张阈值" paramKey="expansionThreshold" min={50} max={200} step={10} />
-                <ParamControl label="缩减阈值" paramKey="shrinkThreshold" min={50} max={200} step={10} />
+                <ParamControl label="扩张阈值" paramKey="expansionThreshold" min={1} max={200} step={1} />
+                <ParamControl label="缩减阈值" paramKey="shrinkThreshold" min={1} max={200} step={1} />
                 <ParamControl label="最大半径" paramKey="maxRadius" min={10} max={40} step={1} />
                 <ParamControl label="最小半径" paramKey="minRadius" min={0} max={20} step={1} />
                 <ParamControl label="扭曲速度" paramKey="distortionSpeed" min={0} max={0.05} step={0.001} />

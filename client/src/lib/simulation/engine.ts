@@ -56,8 +56,8 @@ export interface SimulationParams {
 export const DEFAULT_PARAMS: SimulationParams = {
   // 地幔层
   mantleTimeScale: 0.002,
-  expansionThreshold: 100.0,
-  shrinkThreshold: 80.0,
+    expansionThreshold: 10,
+    shrinkThreshold: 5,
   mantleEnergyLevel: 1.5,
   maxRadius: 22.0,
   minRadius: 5.0,
