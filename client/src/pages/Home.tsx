@@ -456,7 +456,7 @@ export default function Home() {
               {/* 地幔层参数 */}
               <div className="space-y-3">
                 <Label className="text-xs uppercase text-red-500 font-bold">地幔层参数</Label>
-                <ParamControl label="能量等级" paramKey="mantleEnergyLevel" min={0.5} max={3.0} step={0.1} />
+                <ParamControl label="能量等级" paramKey="mantleEnergyLevel" min={1} max={100} step={1} />
                 <ParamControl label="扩张阈值" paramKey="expansionThreshold" min={50} max={200} step={10} />
                 <ParamControl label="缩减阈值" paramKey="shrinkThreshold" min={50} max={200} step={10} />
                 <ParamControl label="最大半径" paramKey="maxRadius" min={10} max={40} step={1} />
@@ -468,7 +468,7 @@ export default function Home() {
               <div className="space-y-3">
                 <Label className="text-xs uppercase text-blue-500 font-bold">气候层参数</Label>
                 <ParamControl label="扩散速度" paramKey="diffusionRate" min={0} max={0.2} step={0.01} />
-                <ParamControl label="雷暴阈值" paramKey="thunderstormThreshold" min={5} max={30} step={1} />
+                <ParamControl label="雷暴阈值" paramKey="thunderstormThreshold" min={1} max={100} step={1} />
               </div>
               
               {/* 晶石层参数 */}
