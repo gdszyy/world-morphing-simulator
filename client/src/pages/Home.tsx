@@ -69,12 +69,21 @@ export default function Home() {
     const zoom = d3.zoom<HTMLCanvasElement, unknown>()
       .scaleExtent([0.5, 10])
       .filter((event) => {
-        // 如果当前是摧毁模式，且按下左键，则禁用缩放/拖拽，优先处理点击
-        if (activeTool === 'destroy' && event.type === 'mousedown' && event.button === 0) {
-          return false;
+        // 如果当前是摧毁模式
+        if (activeTool === 'destroy') {
+          // 鼠标左键点击：禁用缩放/拖拽，优先处理点击
+          if (event.type === 'mousedown' && event.button === 0) {
+            return false;
+          }
+          // 单指触摸：禁用缩放/拖拽，优先处理触摸操作
+          if (event.type === 'touchstart' && event.touches.length === 1) {
+            return false;
+          }
         }
+        // 允许双指缩放/平移，或非摧毁模式下的单指平移
         return !event.ctrlKey && !event.button;
       })
+      .touchable(true) // 显式启用触摸支持
       .on("zoom", (event: d3.D3ZoomEvent<HTMLCanvasElement, unknown>) => {
         if (!context) return;
         const { transform } = event;
@@ -168,7 +177,7 @@ export default function Home() {
   }, [params]);
   
   // Handle Canvas Interaction
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const applyBrush = (clientX: number, clientY: number) => {
     if (activeTool !== 'destroy' || !canvasRef.current) return;
 
     const canvas = canvasRef.current;
@@ -176,13 +185,10 @@ export default function Home() {
     const transform = d3.zoomTransform(canvas);
     
     // Calculate click position in canvas coordinates
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
+    const clickX = clientX - rect.left;
+    const clickY = clientY - rect.top;
     
     // Transform to grid coordinates
-    // transform.x/y is translation, k is scale
-    // gridX = (clickX - transform.x - offsetX) / (k * cellSize)
-    
     const cellSize = 10;
     const gridWidth = engine.width * cellSize;
     const gridHeight = engine.height * cellSize;
@@ -219,6 +225,18 @@ export default function Home() {
     if (modified) {
       // Force re-render
       render(transform);
+    }
+  };
+
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    applyBrush(e.clientX, e.clientY);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    // 仅处理单指触摸，多指用于缩放
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      applyBrush(touch.clientX, touch.clientY);
     }
   };
 
@@ -586,8 +604,9 @@ export default function Home() {
             ref={canvasRef}
             width={canvasSize.width}
             height={canvasSize.height}
-            className="block"
+            className="block touch-none" // 禁用浏览器默认触摸行为
             onClick={handleCanvasClick}
+            onTouchStart={handleTouchStart}
           />
           
           {/* Overlay Controls */}
