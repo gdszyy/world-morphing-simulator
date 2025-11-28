@@ -29,6 +29,7 @@ export interface Cell {
 
   // 人类层
   prosperity: number; // 繁荣度
+  isMining: boolean; // 是否正在开采Beta晶石
 }
 
 export interface SimulationParams {
@@ -246,7 +247,7 @@ export class SimulationEngine {
 
     // 2. 更新人类状态
     // 使用临时网格记录变更，避免顺序依赖
-    const changes: {x: number, y: number, type: 'PROSPERITY' | 'STATE' | 'MIGRATE', value?: number, toX?: number, toY?: number}[] = [];
+    const changes: {x: number, y: number, type: 'PROSPERITY' | 'STATE' | 'MIGRATE' | 'MINING_STATE', value?: number, toX?: number, toY?: number}[] = [];
 
     for (let y = 0; y < this.height; y++) {
         for (let x = 0; x < this.width; x++) {
@@ -275,13 +276,18 @@ export class SimulationEngine {
 
             // C. 采矿 (消除相邻 Beta 晶石)
             const betaNeighbors = neighbors.filter(n => n.crystalState === 'BETA');
+            let isMining = false;
             if (betaNeighbors.length > 0) {
                 // 随机选择一个开采
                 const target = betaNeighbors[Math.floor(Math.random() * betaNeighbors.length)];
                 // 记录消除 Beta
                 changes.push({x: target.x, y: target.y, type: 'STATE', value: 0}); // 变为 EMPTY
                 prosperityChange += humanMiningReward;
+                isMining = true;
             }
+            
+            // 更新开采状态
+            changes.push({x, y, type: 'MINING_STATE', value: isMining ? 1 : 0});
 
             // 应用繁荣度变化
             changes.push({x, y, type: 'PROSPERITY', value: cell.prosperity + prosperityChange});
@@ -341,6 +347,10 @@ export class SimulationEngine {
         } else if (change.type === 'PROSPERITY') {
             if (targetCell.crystalState === 'HUMAN') {
                 targetCell.prosperity = Math.max(0, Math.min(100, change.value!));
+            }
+        } else if (change.type === 'MINING_STATE') {
+            if (targetCell.crystalState === 'HUMAN') {
+                targetCell.isMining = change.value === 1;
             }
         } else if (change.type === 'MIGRATE') {
             // 确保源还是 HUMAN (可能被其他事件改变)

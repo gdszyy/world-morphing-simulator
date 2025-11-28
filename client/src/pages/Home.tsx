@@ -376,10 +376,37 @@ export default function Home() {
                     ctx.fillStyle = '#34d399'; // Lighter Emerald
                 }
             }
-            else if (cell.crystalState === 'BETA') ctx.fillStyle = '#64748b'; // Slate
+            else if (cell.crystalState === 'BETA') {
+                ctx.fillStyle = '#64748b'; // Slate
+                // 采矿特效：闪烁
+                if (cell.isMining) {
+                    const flash = Math.sin(Date.now() / 100) * 0.5 + 0.5;
+                    ctx.fillStyle = `rgba(255, 255, 255, ${flash})`;
+                }
+            }
             else ctx.fillStyle = '#404040'; // Empty ground
             
             ctx.fillRect(px, py, cellSize, cellSize);
+        } else if (activeLayer === 'human') {
+            // Human Layer Visualization
+            if (cell.crystalState === 'HUMAN') {
+                // Prosperity: Orange -> White
+                const intensity = Math.min(1, cell.prosperity / 100);
+                ctx.fillStyle = `rgb(255, ${165 + (255-165)*intensity}, ${intensity * 255})`;
+                ctx.fillRect(px, py, cellSize, cellSize);
+            } else {
+                // Background: Temperature suitability (Subtle)
+                // Ideal (35°C) -> Greenish tint
+                const idealTemp = 35;
+                const diff = Math.abs(cell.temperature - idealTemp);
+                if (diff < 10) {
+                    ctx.fillStyle = `rgba(34, 197, 94, ${0.1 * (1 - diff/10)})`; // Green-500 with low opacity
+                    ctx.fillRect(px, py, cellSize, cellSize);
+                } else {
+                    ctx.fillStyle = '#1a1a1a';
+                    ctx.fillRect(px, py, cellSize, cellSize);
+                }
+            }
         } else {
             // Combined View
             // Base: Ground (Dark Grey)
@@ -399,7 +426,7 @@ export default function Home() {
                 ctx.fillRect(px, py, cellSize, cellSize);
             }
             
-            // Crystal
+            // Crystal & Human
             if (cell.crystalState === 'ALPHA') {
                 ctx.fillStyle = '#10b981';
                 // 能量吸收视觉效果：白色边框
@@ -409,6 +436,15 @@ export default function Home() {
                 ctx.fillRect(px, py, cellSize, cellSize);
             } else if (cell.crystalState === 'BETA') {
                 ctx.fillStyle = '#64748b';
+                // 采矿特效：红色闪烁
+                if (cell.isMining) {
+                    const flash = Math.sin(Date.now() / 50) * 0.5 + 0.5;
+                    ctx.fillStyle = `rgba(239, 68, 68, ${flash})`; // Red-500
+                }
+                ctx.fillRect(px, py, cellSize, cellSize);
+            } else if (cell.crystalState === 'HUMAN') {
+                // Human Settlements: Orange
+                ctx.fillStyle = '#f97316'; // Orange-500
                 ctx.fillRect(px, py, cellSize, cellSize);
             }
             
