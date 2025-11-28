@@ -80,7 +80,7 @@ export default function Home() {
     // but usually we just want to update current params.
     // However, for initial load, we want to ensure engine starts with saved default.
   }, [defaultConfig]);
-  const [activeLayer, setActiveLayer] = useState<'combined' | 'mantle' | 'climate' | 'crystal'>('combined');
+  const [activeLayer, setActiveLayer] = useState<'combined' | 'mantle' | 'climate' | 'crystal' | 'human'>('combined');
   const [stats, setStats] = useState({ timeStep: 0, cycle: 0, fps: 0 });
   const [mapSize, setMapSize] = useState({ width: 50, height: 50 });
   const [isRestartOpen, setIsRestartOpen] = useState(false);
@@ -625,6 +625,13 @@ export default function Home() {
                   >
                     晶石层
                   </Button>
+                  <Button 
+                    variant={activeLayer === 'human' ? 'default' : 'outline'} 
+                    onClick={() => setActiveLayer('human')}
+                    className="justify-start text-orange-400 border-orange-900/30 hover:bg-orange-900/20 col-span-2"
+                  >
+                    人类层
+                  </Button>
                 </div>
               </div>
               
@@ -693,15 +700,15 @@ export default function Home() {
               {/* 地幔层参数 */}
               <div className="space-y-3">
                 <Label className="text-xs uppercase text-red-500 font-bold">地幔层参数</Label>
-                <ParamControl label="能量等级" paramKey="mantleEnergyLevel" min={1} max={100} step={1} />
-                <ParamControl label="扩张阈值" paramKey="expansionThreshold" min={1} max={200} step={1} />
-                <ParamControl label="缩减阈值" paramKey="shrinkThreshold" min={1} max={200} step={1} />
+                <ParamControl label="能量等级" paramKey="mantleEnergyLevel" min={1} max={200} step={1} />
+                <ParamControl label="扩张阈值" paramKey="expansionThreshold" min={1} max={300} step={1} />
+                <ParamControl label="缩减阈值" paramKey="shrinkThreshold" min={1} max={300} step={1} />
                 <ParamControl label="最大半径" paramKey="maxRadius" min={10} max={40} step={1} />
                 <ParamControl label="最小半径" paramKey="minRadius" min={0} max={20} step={1} />
                 <ParamControl label="扭曲速度" paramKey="distortionSpeed" min={0} max={0.05} step={0.001} />
-                <ParamControl label="边缘生成宽度" paramKey="edgeGenerationWidth" min={0} max={5} step={1} />
-                <ParamControl label="边缘生成偏移" paramKey="edgeGenerationOffset" min={0} max={10} step={1} />
-                <ParamControl label="边缘生成能量" paramKey="edgeGenerationEnergy" min={0} max={10} step={0.1} />
+                <ParamControl label="边缘生成宽度" paramKey="edgeGenerationWidth" min={0} max={10} step={1} />
+                <ParamControl label="边缘生成偏移" paramKey="edgeGenerationOffset" min={0} max={20} step={1} />
+                <ParamControl label="边缘生成能量" paramKey="edgeGenerationEnergy" min={0} max={20} step={0.1} />
                 <ParamControl label="供给点数量(需重启)" paramKey="edgeSupplyPointCount" min={1} max={10} step={1} />
                 <ParamControl label="供给点迁移速度" paramKey="edgeSupplyPointSpeed" min={0} max={0.5} step={0.01} />
               </div>
