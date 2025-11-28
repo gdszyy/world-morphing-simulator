@@ -67,6 +67,9 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   newSpeciesThreshold: { desc: "新物种阈值", impact: "属性变化超过此比例时判定为新物种" },
   minProsperityGrowth: { desc: "非人类生物最小增长", impact: "确保随机生成的生物具有最低生存能力" },
   sameSpeciesBonus: { desc: "同种群加成", impact: "相同种群邻居提供的繁荣度加成" },
+  humanRespawnDelay: { desc: "人类重生延迟", impact: "人类灭绝后等待多少步才重生" },
+  bioAutoSpawnCount: { desc: "自动生成阈值", impact: "当物种数量少于此值时触发自动生成" },
+  bioAutoSpawnInterval: { desc: "自动生成间隔", impact: "每隔多少步尝试自动生成新物种" },
 };
 
 export default function Home() {
@@ -935,6 +938,7 @@ export default function Home() {
                   <ParamControl label="迁移阈值" paramKey="humanMigrationThreshold" min={0} max={100} step={1} />
 
                   <ParamControl label="Alpha辐射伤害" paramKey="alphaRadiationDamage" min={0} max={20} step={0.5} />
+                  <ParamControl label="人类重生延迟" paramKey="humanRespawnDelay" min={10} max={200} step={10} />
                 </div>
                 
                 <div className="space-y-4 pt-4 border-t border-border">
@@ -946,6 +950,8 @@ export default function Home() {
                   <ParamControl label="新物种阈值" paramKey="newSpeciesThreshold" min={0} max={1} step={0.05} />
                   <ParamControl label="最小增长" paramKey="minProsperityGrowth" min={0} max={20} step={0.5} />
                   <ParamControl label="同种群加成" paramKey="sameSpeciesBonus" min={0} max={10} step={0.1} />
+                  <ParamControl label="自动生成阈值" paramKey="bioAutoSpawnCount" min={0} max={20} step={1} />
+                  <ParamControl label="自动生成间隔" paramKey="bioAutoSpawnInterval" min={1} max={100} step={1} />
                 </div>
             </TabsContent>
           </Tabs>

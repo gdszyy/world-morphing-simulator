@@ -103,6 +103,9 @@ export interface SimulationParams {
   humanMigrationThreshold: number;
   alphaRadiationDamage: number;
   humanSpawnPoint?: {x: number, y: number};
+  humanRespawnDelay: number; // 人类重生延迟 (步数)
+  bioAutoSpawnCount: number; // 自动生成物种的触发数量阈值
+  bioAutoSpawnInterval: number; // 自动生成物种的时间间隔
 }
 
 export const DEFAULT_PARAMS: SimulationParams = {
@@ -157,8 +160,11 @@ export const DEFAULT_PARAMS: SimulationParams = {
   humanProsperityDecay: 1.4,
   humanExpansionThreshold: 80,
   humanMiningReward: 27,
-  humanMigrationThreshold: 42,
-  alphaRadiationDamage: 20,
+  humanMigrationThreshold: 80,
+  alphaRadiationDamage: 10,
+  humanRespawnDelay: 20,
+  bioAutoSpawnCount: 5,
+  bioAutoSpawnInterval: 10,
 };
 
 export class SimulationEngine {
@@ -292,26 +298,42 @@ export class SimulationEngine {
         newEnergy = newEnergy * 0.9 + avgEnergy * 0.1;
         
         // 4. 边缘能量生成
+        // 计算到中心的距离
+        const distToCenter = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+        
+        // 检查是否在边缘生成范围内
+        // 边缘定义为：距离中心最远的有效点附近
+        // 这里简化为：如果邻居中有无效点，或者距离中心足够远
         const hasVoidNeighbor = neighbors.length < 8 || neighbors.some(n => !n.exists);
         
+        // 只有在边缘区域才生成能量
         if (hasVoidNeighbor) {
             const angle = Math.atan2(y - centerY, x - centerX);
             let normalizedAngle = angle;
             if (normalizedAngle < 0) normalizedAngle += Math.PI * 2;
             
-            let isNearSupplyPoint = false;
+            // 计算供给点的影响
+            let maxInfluence = 0;
             for (const point of this.edgeSupplyPoints) {
                 let diff = Math.abs(normalizedAngle - point.angle);
                 if (diff > Math.PI) diff = Math.PI * 2 - diff;
                 
+                // 供给点影响范围 (PI/4 = 45度)
                 if (diff < Math.PI / 4) {
-                    isNearSupplyPoint = true;
-                    break;
+                    // 角度影响因子 (余弦衰减)
+                    const angleInfluence = Math.cos(diff * 4); 
+                    
+                    // 距离影响因子 (基于edgeGenerationOffset和edgeGenerationWidth)
+                    // 假设边缘是在当前半径附近
+                    // 我们需要找到当前角度上的最大半径
+                    // 这里简化处理：直接使用当前点是否为边缘点
+                    
+                    maxInfluence = Math.max(maxInfluence, angleInfluence);
                 }
             }
             
-            if (isNearSupplyPoint) {
-                newEnergy += edgeGenerationEnergy;
+            if (maxInfluence > 0) {
+                newEnergy += edgeGenerationEnergy * maxInfluence;
             }
         }
         
@@ -606,8 +628,10 @@ export class SimulationEngine {
         }
     }
     
-    // 规则：物种数量少于5种时，每10步尝试生成随机新物种
-    if (speciesSet.size < 5 && this.timeStep % 10 === 0) {
+    // 规则：物种数量少于阈值时，每隔一定步数尝试生成随机新物种
+    const autoSpawnCount = this.params.bioAutoSpawnCount || 5;
+    const autoSpawnInterval = this.params.bioAutoSpawnInterval || 10;
+    if (speciesSet.size < autoSpawnCount && this.timeStep % autoSpawnInterval === 0) {
         this.spawnRandomSpecies();
     }
 
@@ -623,7 +647,9 @@ export class SimulationEngine {
                 this.bioExtinctionStep = this.timeStep;
             }
             
-            if (this.timeStep - this.bioExtinctionStep >= 20) {
+            // 使用参数化的重生延迟
+            const respawnDelay = this.params.humanRespawnDelay || 20;
+            if (this.timeStep - this.bioExtinctionStep >= respawnDelay) {
                 this.spawnHuman(100);
                 this.bioExtinctionStep = null;
             }
