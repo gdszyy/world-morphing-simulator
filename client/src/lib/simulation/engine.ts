@@ -46,6 +46,7 @@ export interface SimulationParams {
   edgeGenerationOffset: number; // 边缘生成偏移（从边缘第几层开始）
   edgeSupplyPointCount: number; // 边缘供给点数量
   edgeSupplyPointSpeed: number; // 边缘供给点迁移速度
+  mantleHeatFactor: number; // 地幔热量系数 (影响地表温度)
   
   // 气候层参数
   diffusionRate: number;
@@ -75,6 +76,7 @@ export interface SimulationParams {
   humanExpansionThreshold: number; // 扩张所需的繁荣度阈值
   humanMiningReward: number; // 消除Beta晶石获得的繁荣度
   humanMigrationThreshold: number; // 低于此繁荣度开始迁移
+  alphaRadiationDamage: number; // Alpha晶石辐射伤害 (每帧减少繁荣度)
 }
 
 export const DEFAULT_PARAMS: SimulationParams = {
@@ -91,6 +93,7 @@ export const DEFAULT_PARAMS: SimulationParams = {
   edgeGenerationOffset: 1,
   edgeSupplyPointCount: 3,
   edgeSupplyPointSpeed: 0.05,
+  mantleHeatFactor: 0.1, // 默认值
   
   // 气候层
   diffusionRate: 0.12,
@@ -120,6 +123,7 @@ export const DEFAULT_PARAMS: SimulationParams = {
   humanExpansionThreshold: 80,
   humanMiningReward: 20,
   humanMigrationThreshold: 40,
+  alphaRadiationDamage: 2.0, // 默认辐射伤害
 };
 
 export class SimulationEngine {
@@ -273,6 +277,12 @@ export class SimulationEngine {
             const neighbors = this.getNeighbors(x, y);
             const humanNeighbors = neighbors.filter(n => n.crystalState === 'HUMAN');
             prosperityChange += humanNeighbors.length * 0.1; // 每个邻居提供少量加成
+
+            // Alpha 辐射伤害
+            const alphaNeighbors = neighbors.filter(n => n.crystalState === 'ALPHA');
+            if (alphaNeighbors.length > 0) {
+                prosperityChange -= alphaNeighbors.length * this.params.alphaRadiationDamage;
+            }
 
             // C. 采矿 (消除相邻 Beta 晶石)
             const betaNeighbors = neighbors.filter(n => n.crystalState === 'BETA');
@@ -633,7 +643,10 @@ export class SimulationEngine {
         }
         
         const normalizedEnergy = Math.min(100, cell.mantleEnergy); 
-        cell.baseTemperature = (normalizedEnergy - 50.0) * 0.5 + seasonalOffset;
+        // 应用地幔热量系数：系数越大，地幔能量对温度的贡献越大
+        // 默认系数 0.1 对应之前的 0.5 (因为 0.1 * 5 = 0.5, 这里我们调整公式使其更直观)
+        // 新公式：baseTemp = (Energy - 50) * factor * 5 + seasonal
+        cell.baseTemperature = (normalizedEnergy - 50.0) * (this.params.mantleHeatFactor * 5) + seasonalOffset;
         
         const neighbors = this.getNeighbors(x, y).filter(n => n.exists);
         if (neighbors.length > 0) {

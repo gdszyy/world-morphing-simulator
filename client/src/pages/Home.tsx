@@ -41,6 +41,7 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   edgeGenerationOffset: { desc: "边缘能量生成的起始偏移（从边缘第几层开始）", impact: "高：能量生成更靠内 / 低：能量生成紧贴边缘" },
   edgeSupplyPointCount: { desc: "边缘能量供给点的数量", impact: "高：多点供给 / 低：少点供给" },
   edgeSupplyPointSpeed: { desc: "边缘供给点的迁移速度", impact: "高：供给点移动快 / 低：供给点移动慢" },
+  mantleHeatFactor: { desc: "地幔热量系数", impact: "影响地幔能量转化为地表温度的效率" },
   
   // 人类层参数
   humanMinTemp: { desc: "人类适宜生存的最低温度", impact: "高: 只能在温暖区域生存 / 低: 耐寒能力强" },
@@ -52,6 +53,7 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   humanExpansionThreshold: { desc: "触发扩张所需的繁荣度阈值", impact: "高: 难以扩张 / 低: 容易扩张" },
   humanMiningReward: { desc: "开采Beta晶石获得的繁荣度奖励", impact: "高: 采矿收益大 / 低: 采矿收益小" },
   humanMigrationThreshold: { desc: "触发迁移的繁荣度阈值", impact: "高: 容易迁移 / 低: 坚守原地" },
+  alphaRadiationDamage: { desc: "Alpha辐射伤害", impact: "Alpha晶石对周围人类造成的繁荣度持续伤害" },
   humanSpawnPoint: { desc: "人类重生点坐标", impact: "人类灭绝后重新生成的固定位置" },
   energySharingLimit: { desc: "晶石能量共享上限", impact: "限制单次共享的最大能量值" },
   energyDecayRate: { desc: "能量传输衰减率", impact: "高: 能量传输距离短 / 低: 能量传输距离长" },
@@ -378,11 +380,6 @@ export default function Home() {
             }
             else if (cell.crystalState === 'BETA') {
                 ctx.fillStyle = '#64748b'; // Slate
-                // 采矿特效：闪烁
-                if (cell.isMining) {
-                    const flash = Math.sin(Date.now() / 100) * 0.5 + 0.5;
-                    ctx.fillStyle = `rgba(255, 255, 255, ${flash})`;
-                }
             }
             else ctx.fillStyle = '#404040'; // Empty ground
             
@@ -436,11 +433,6 @@ export default function Home() {
                 ctx.fillRect(px, py, cellSize, cellSize);
             } else if (cell.crystalState === 'BETA') {
                 ctx.fillStyle = '#64748b';
-                // 采矿特效：红色闪烁
-                if (cell.isMining) {
-                    const flash = Math.sin(Date.now() / 50) * 0.5 + 0.5;
-                    ctx.fillStyle = `rgba(239, 68, 68, ${flash})`; // Red-500
-                }
                 ctx.fillRect(px, py, cellSize, cellSize);
             } else if (cell.crystalState === 'HUMAN') {
                 // Human Settlements: Orange
@@ -773,6 +765,7 @@ export default function Home() {
                 <ParamControl label="边缘生成能量" paramKey="edgeGenerationEnergy" min={0} max={20} step={0.1} />
                 <ParamControl label="供给点数量(需重启)" paramKey="edgeSupplyPointCount" min={1} max={10} step={1} />
                 <ParamControl label="供给点迁移速度" paramKey="edgeSupplyPointSpeed" min={0} max={0.5} step={0.01} />
+                <ParamControl label="地幔热量系数" paramKey="mantleHeatFactor" min={0} max={1.0} step={0.01} />
               </div>
               
               {/* 气候层参数 */}
@@ -803,11 +796,12 @@ export default function Home() {
                   <ParamControl label="繁荣度增长" paramKey="humanProsperityGrowth" min={0} max={5} step={0.1} />
                   <ParamControl label="繁荣度衰减" paramKey="humanProsperityDecay" min={0} max={5} step={0.1} />
                   <ParamControl label="扩张阈值" paramKey="humanExpansionThreshold" min={10} max={200} step={5} />
-                  <ParamControl label="采矿奖励" paramKey="humanMiningReward" min={0} max={100} step={5} />
-                  <ParamControl label="迁移阈值" paramKey="humanMigrationThreshold" min={0} max={100} step={5} />
+                  <ParamControl label="采矿奖励" paramKey="humanMiningReward" min={0} max={100} step={1} />
+                  <ParamControl label="迁移阈值" paramKey="humanMigrationThreshold" min={0} max={100} step={1} />
+                  <ParamControl label="Alpha辐射伤害" paramKey="alphaRadiationDamage" min={0} max={20} step={0.5} />
                 </div>
-              </TabsContent>
-            </Tabs>
+            </TabsContent>
+          </Tabs>
         </aside>
         
         {/* Main Canvas Area */}
