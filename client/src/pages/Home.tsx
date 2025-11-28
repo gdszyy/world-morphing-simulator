@@ -51,9 +51,11 @@ export default function Home() {
   // Human Behavior Tool State
   const [activeTool, setActiveTool] = useState<ToolType>('none');
   const [brushSize, setBrushSize] = useState(3);
+  const [canvasSize, setCanvasSize] = useState({ width: window.innerWidth, height: window.innerHeight });
 
   // Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLElement>(null);
   const requestRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
   
@@ -143,7 +145,22 @@ export default function Home() {
   useEffect(() => {
     requestRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(requestRef.current);
-  }, [isPlaying, engine, activeLayer, speedMultiplier, activeTool, brushSize]); // Dependencies for loop
+  }, [isPlaying, engine, activeLayer, speedMultiplier, activeTool, brushSize, canvasSize]); // Dependencies for loop
+
+  // Handle Resize
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        setCanvasSize({ width, height });
+      }
+    });
+
+    resizeObserver.observe(containerRef.current);
+    return () => resizeObserver.disconnect();
+  }, []);
   
   // Update Params
   useEffect(() => {
@@ -555,7 +572,10 @@ export default function Home() {
         </aside>
         
         {/* Main Canvas Area */}
-        <main className={`flex-1 bg-black relative overflow-hidden ${activeTool === 'destroy' ? 'cursor-crosshair' : 'cursor-move'}`}>
+        <main 
+          ref={containerRef}
+          className={`flex-1 bg-black relative overflow-hidden ${activeTool === 'destroy' ? 'cursor-crosshair' : 'cursor-move'}`}
+        >
           <HumanBehaviorTool 
             activeTool={activeTool}
             onToolChange={setActiveTool}
@@ -564,9 +584,9 @@ export default function Home() {
           />
           <canvas 
             ref={canvasRef}
-            width={1200}
-            height={800}
-            className="block w-full h-full"
+            width={canvasSize.width}
+            height={canvasSize.height}
+            className="block"
             onClick={handleCanvasClick}
           />
           
