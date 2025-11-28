@@ -588,6 +588,23 @@ export class SimulationEngine {
     }
 
     // 2. 处理生物生成/重生逻辑
+    
+    // 统计当前物种数量
+    const speciesSet = new Set<number>();
+    for (let y = 0; y < this.height; y++) {
+        for (let x = 0; x < this.width; x++) {
+            const cell = this.grid[y][x];
+            if (cell.crystalState === 'BIO' && cell.bioAttributes) {
+                speciesSet.add(cell.bioAttributes.speciesId);
+            }
+        }
+    }
+    
+    // 规则：物种数量少于5种时，每10步尝试生成随机新物种
+    if (speciesSet.size < 5 && this.timeStep % 10 === 0) {
+        this.spawnRandomSpecies();
+    }
+
     if (bioCount === 0) {
         if (this.isFirstSpawn) {
             if (this.timeStep >= 50) {
@@ -842,6 +859,85 @@ export class SimulationEngine {
   
   spawnHuman(prosperity: number) {
       this.spawnBio(prosperity);
+  }
+
+  spawnRandomSpecies() {
+      // 寻找符合条件的随机位置：
+      // 1. 是空地
+      // 2. 附近3格内没有Alpha晶石
+      // 3. 温度适宜（可选，为了存活率）
+      
+      const candidates: Cell[] = [];
+      const safeDistance = 3;
+      
+      for (let y = 0; y < this.height; y++) {
+          for (let x = 0; x < this.width; x++) {
+              const cell = this.grid[y][x];
+              if (!cell.exists || cell.crystalState !== 'EMPTY') continue;
+              
+              // 检查附近3格内是否有Alpha晶石
+              let isSafe = true;
+              for (let dy = -safeDistance; dy <= safeDistance; dy++) {
+                  for (let dx = -safeDistance; dx <= safeDistance; dx++) {
+                      const nx = x + dx;
+                      const ny = y + dy;
+                      if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height) {
+                          if (this.grid[ny][nx].crystalState === 'ALPHA') {
+                              isSafe = false;
+                              break;
+                          }
+                      }
+                  }
+                  if (!isSafe) break;
+              }
+              
+              if (isSafe) {
+                  candidates.push(cell);
+              }
+          }
+      }
+      
+      if (candidates.length > 0) {
+          const target = candidates[Math.floor(Math.random() * candidates.length)];
+          
+          // 生成随机属性的新物种
+          const speciesId = Math.floor(Math.random() * 100000) + 1; // +1 避免与人类(0)冲突
+          const color = `hsl(${Math.random() * 360}, 70%, 50%)`;
+          
+          // 基于人类参数进行大幅随机变异
+          const baseAttrs = {
+            minTemp: this.params.humanMinTemp,
+            maxTemp: this.params.humanMaxTemp,
+            survivalMinTemp: this.params.humanSurvivalMinTemp,
+            survivalMaxTemp: this.params.humanSurvivalMaxTemp,
+            prosperityGrowth: this.params.humanProsperityGrowth,
+            prosperityDecay: this.params.humanProsperityDecay,
+            expansionThreshold: this.params.humanExpansionThreshold,
+            miningReward: this.params.humanMiningReward,
+            migrationThreshold: this.params.humanMigrationThreshold,
+            alphaRadiationDamage: this.params.alphaRadiationDamage,
+          };
+          
+          // 随机波动 +/- 50%
+          const randomize = (val: number) => val * (0.5 + Math.random());
+          
+          target.crystalState = 'BIO';
+          target.prosperity = 50; // 初始繁荣度
+          target.bioAttributes = {
+              minTemp: baseAttrs.minTemp + (Math.random() - 0.5) * 20,
+              maxTemp: baseAttrs.maxTemp + (Math.random() - 0.5) * 20,
+              survivalMinTemp: baseAttrs.survivalMinTemp, // 保持极限生存范围不变，避免秒死
+              survivalMaxTemp: baseAttrs.survivalMaxTemp,
+              prosperityGrowth: randomize(baseAttrs.prosperityGrowth),
+              prosperityDecay: randomize(baseAttrs.prosperityDecay),
+              expansionThreshold: randomize(baseAttrs.expansionThreshold),
+              miningReward: randomize(baseAttrs.miningReward),
+              migrationThreshold: randomize(baseAttrs.migrationThreshold),
+              alphaRadiationDamage: baseAttrs.alphaRadiationDamage,
+              speciesId,
+              color
+          };
+      }
   }
 
   getNeighbors(x: number, y: number, includeVoid: boolean = false): Cell[] {

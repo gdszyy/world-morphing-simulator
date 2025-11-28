@@ -5,7 +5,7 @@ import { Slider } from "@/components/ui/slider";
 import { Eraser, MousePointer2, MapPin } from "lucide-react";
 import { useState } from "react";
 
-export type ToolType = 'none' | 'destroy' | 'spawn';
+export type ToolType = 'none' | 'destroy' | 'spawn_point';
 
 interface HumanBehaviorToolProps {
   activeTool: ToolType;
@@ -48,9 +48,9 @@ export default function HumanBehaviorTool({
             摧毁
           </Button>
           <Button
-            variant={activeTool === 'spawn' ? "default" : "outline"}
+            variant={activeTool === 'spawn_point' ? "default" : "outline"}
             size="sm"
-            onClick={() => onToolChange('spawn')}
+            onClick={() => onToolChange('spawn_point')}
             className="w-full col-span-2 bg-orange-600 hover:bg-orange-700 text-white border-orange-800"
           >
             <MapPin className="w-4 h-4 mr-2" />
@@ -77,7 +77,7 @@ export default function HumanBehaviorTool({
         
         <div className="text-xs text-neutral-500">
           {activeTool === 'destroy' && "点击晶石区域可按画笔范围摧毁晶石"}
-          {activeTool === 'spawn' && "点击地图任意位置设置人类重生点"}
+          {activeTool === 'spawn_point' && "点击地图任意位置设置人类重生点"}
           {activeTool === 'none' && "仅观察模式，无法修改世界"}
         </div>
       </div>

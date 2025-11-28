@@ -227,7 +227,7 @@ export default function Home() {
   
   // Handle Canvas Interaction
   const applyBrush = (clientX: number, clientY: number) => {
-    if (activeTool !== 'destroy' || !canvasRef.current) return;
+    if (!canvasRef.current) return;
 
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
@@ -250,30 +250,44 @@ export default function Home() {
     const gridX = Math.floor(rawX / cellSize);
     const gridY = Math.floor(rawY / cellSize);
     
-    // Apply brush
-    const halfBrush = Math.floor(brushSize / 2);
-    const startX = gridX - halfBrush;
-    const startY = gridY - halfBrush;
-    
-    let modified = false;
-    
-    for (let y = startY; y < startY + brushSize; y++) {
-      for (let x = startX; x < startX + brushSize; x++) {
-        if (x >= 0 && x < engine.width && y >= 0 && y < engine.height) {
-          const cell = engine.grid[y][x];
-          if (cell.exists && cell.crystalState !== 'EMPTY') {
-            cell.crystalState = 'EMPTY';
-            cell.crystalEnergy = 0;
-            cell.storedEnergy = 0;
-            modified = true;
+    if (activeTool === 'spawn_point') {
+        if (gridX >= 0 && gridX < engine.width && gridY >= 0 && gridY < engine.height) {
+            setParams(prev => ({
+                ...prev,
+                humanSpawnPoint: { x: gridX, y: gridY }
+            }));
+            // 立即触发一次渲染以显示红框
+            render(transform);
+        }
+        return;
+    }
+
+    if (activeTool === 'destroy') {
+        // Apply brush
+        const halfBrush = Math.floor(brushSize / 2);
+        const startX = gridX - halfBrush;
+        const startY = gridY - halfBrush;
+        
+        let modified = false;
+        
+        for (let y = startY; y < startY + brushSize; y++) {
+          for (let x = startX; x < startX + brushSize; x++) {
+            if (x >= 0 && x < engine.width && y >= 0 && y < engine.height) {
+              const cell = engine.grid[y][x];
+              if (cell.exists && cell.crystalState !== 'EMPTY') {
+                cell.crystalState = 'EMPTY';
+                cell.crystalEnergy = 0;
+                cell.storedEnergy = 0;
+                modified = true;
+              }
+            }
           }
         }
-      }
-    }
-    
-    if (modified) {
-      // Force re-render
-      render(transform);
+        
+        if (modified) {
+          // Force re-render
+          render(transform);
+        }
     }
   };
 
@@ -467,6 +481,25 @@ export default function Home() {
                 ctx.fillRect(px, py, cellSize, cellSize);
             }
         }
+      }
+
+      // 绘制重生点红框
+      if (params.humanSpawnPoint) {
+          const { x, y } = params.humanSpawnPoint;
+          const px = x * cellSize;
+          const py = y * cellSize;
+          
+          ctx.strokeStyle = '#ef4444'; // Red-500
+          ctx.lineWidth = 2;
+          ctx.strokeRect(px - 1, py - 1, cellSize + 2, cellSize + 2);
+          
+          // 绘制一个小标记
+          ctx.fillStyle = '#ef4444';
+          ctx.beginPath();
+          ctx.moveTo(px + cellSize/2, py - 5);
+          ctx.lineTo(px + cellSize/2 - 4, py - 10);
+          ctx.lineTo(px + cellSize/2 + 4, py - 10);
+          ctx.fill();
       }
     }
 
@@ -713,11 +746,57 @@ export default function Home() {
                     onClick={() => setActiveLayer('human')}
                     className="justify-start text-orange-400 border-orange-900/30 hover:bg-orange-900/20 col-span-2"
                   >
-                    人类层
+                    生物层
                   </Button>
                 </div>
               </div>
               
+              {/* 物种列表 */}
+              <div className="space-y-2">
+                  <Label className="text-xs uppercase text-neutral-500 font-bold">当前物种</Label>
+                  <div className="bg-neutral-950 rounded border border-neutral-800 overflow-hidden">
+                      <table className="w-full text-xs text-left">
+                          <thead className="bg-neutral-900 text-neutral-400">
+                              <tr>
+                                  <th className="p-2 font-medium">ID</th>
+                                  <th className="p-2 font-medium">颜色</th>
+                                  <th className="p-2 font-medium">数量</th>
+                              </tr>
+                          </thead>
+                          <tbody>
+                              {(() => {
+                                  const speciesCounts = new Map<number, {count: number, color: string}>();
+                                  for (let y = 0; y < engine.height; y++) {
+                                      for (let x = 0; x < engine.width; x++) {
+                                          const cell = engine.grid[y][x];
+                                          if (cell.crystalState === 'BIO' && cell.bioAttributes) {
+                                              const id = cell.bioAttributes.speciesId;
+                                              const current = speciesCounts.get(id) || {count: 0, color: cell.bioAttributes.color};
+                                              current.count++;
+                                              speciesCounts.set(id, current);
+                                          }
+                                      }
+                                  }
+                                  
+                                  if (speciesCounts.size === 0) {
+                                      return <tr><td colSpan={3} className="p-2 text-center text-neutral-500">无生物存活</td></tr>;
+                                  }
+
+                                  return Array.from(speciesCounts.entries()).map(([id, info]) => (
+                                      <tr key={id} className="border-t border-neutral-800">
+                                          <td className="p-2 font-mono">{id === 0 ? '人类' : String.fromCharCode(65 + (id % 26))}</td>
+                                          <td className="p-2">
+                                              <div className="w-3 h-3 rounded-full" style={{backgroundColor: info.color}}></div>
+                                          </td>
+                                          <td className="p-2">{info.count}</td>
+                                      </tr>
+                                  ));
+                              })()}
+                          </tbody>
+                      </table>
+                  </div>
+              </div>
+
               <div className="p-4 bg-neutral-950 rounded border border-neutral-800 text-xs space-y-2">
                 <div className="font-bold text-neutral-400">图例</div>
                 {activeLayer === 'combined' && (
