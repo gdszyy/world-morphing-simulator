@@ -601,12 +601,9 @@ export class SimulationEngine {
             if (emptyNeighbors.length > 0) {
                 const target = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
                 
-                const dist = Math.sqrt((target.x - this.width/2)**2 + (target.y - this.height/2)**2);
-                const betaChance = Math.min(0.8, Math.max(0, (dist - 5) / 15));
-                
-                const newType = Math.random() < betaChance ? 'BETA' : 'ALPHA';
-                
-                crystalChanges.push({x: target.x, y: target.y, type: newType});
+                // Alpha 晶石扩张只能生成 Alpha 晶石
+                // Beta 晶石只能由 Alpha 晶石能量枯竭转化而来
+                crystalChanges.push({x: target.x, y: target.y, type: 'ALPHA'});
                 cell.storedEnergy -= expansionCost;
             }
         }
@@ -860,12 +857,17 @@ export class SimulationEngine {
   }
 
   distributeExtinctionBonus(x: number, y: number, bonus: number) {
+      // 能量仅扩散给周围的晶石或生物，不返还给地幔
       const neighbors = this.getNeighbors(x, y);
+      if (neighbors.length === 0) return;
+
+      const bonusPerNeighbor = bonus / neighbors.length;
+      
       for (const n of neighbors) {
           if (n.crystalState === 'ALPHA' || n.crystalState === 'BETA') {
-              n.storedEnergy += bonus;
+              n.storedEnergy += bonusPerNeighbor;
           } else if (n.crystalState === 'BIO') {
-              n.prosperity += bonus;
+              n.prosperity += bonusPerNeighbor;
           }
       }
   }
