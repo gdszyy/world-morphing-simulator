@@ -155,76 +155,138 @@ export class SimulationEngine {
   updateMantleLayer() {
     const { 
         mantleTimeScale, expansionThreshold, shrinkThreshold, 
-        mantleEnergyLevel, maxRadius, minRadius, distortionSpeed 
+        mantleEnergyLevel, maxRadius, minRadius 
     } = this.params;
     const centerX = this.width / 2;
     const centerY = this.height / 2;
     
+    // 1. 计算化学势 (Chemical Potential) - 基于 Cahn-Hilliard 方程简化
+    // 目标：相分离 (Phase Separation) -> 自动聚团 + 填补空缺
+    // 能量守恒：通过扩散实现，不直接生成/销毁能量
+    
+    const diffusionCoeff = 0.2; // 扩散系数
+    const interfaceWidth = 1.5; // 界面宽度参数
+    
+    // 临时存储能量变化
+    const energyChanges = Array(this.height).fill(0).map(() => Array(this.width).fill(0));
+    
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const cell = this.grid[y][x];
-        if (!cell.exists) {
-            cell.mantleEnergy = 0;
-            continue;
+        if (!cell.exists) continue;
+        
+        const neighbors = this.getNeighbors(x, y).filter(n => n.exists);
+        if (neighbors.length === 0) continue;
+        
+        // 计算局部平均能量
+        const avgEnergy = neighbors.reduce((sum, n) => sum + n.mantleEnergy, 0) / neighbors.length;
+        
+        // Cahn-Hilliard 动力学简化：
+        // 能量流向 = -∇μ (化学势梯度)
+        // μ = f'(c) - k∇²c
+        // 简化为：流向倾向于使能量接近 0 或 100 (相分离)，同时平滑界面
+        
+        // 1. 相分离力 (Double-well potential): 推动能量向 0 或 100 极化
+        // f'(c) ~ c * (c - 1) * (c - 0.5)
+        // 这里我们用更简单的逻辑：如果能量高，吸取周围能量；如果能量低，流出能量
+        // 但要保持总能量守恒，必须是交换
+        
+        // 2. 表面张力 (Surface Tension): 最小化界面 -> 填补空缺，平滑边缘
+        // 表现为扩散项：使局部能量趋于一致
+        
+        // 结合算法：
+        // 每个细胞与邻居交换能量
+        for (const neighbor of neighbors) {
+            // 能量差
+            const diff = neighbor.mantleEnergy - cell.mantleEnergy;
+            
+            // 交换量 = 扩散 + 聚集驱动
+            // 聚集驱动：如果两者都较高(>50)，倾向于均分保持高位；如果一高一低，高的吸取低的(Ostwald ripening)
+            // 但为了填补空缺，我们需要"高能量流向低能量" (常规扩散)
+            // 为了维持团块，我们需要"反向扩散" (Up-hill diffusion) 在特定条件下
+            
+            // 采用简单的非线性扩散：
+            // J = -D * ∇E + v * E * (1-E)
+            // 这里简化为：总是试图平滑 (填补空缺)，但受到"相"的牵引
+            
+            // 缓慢迁徙：引入一个随时间变化的偏置场
+            const time = this.timeStep * mantleTimeScale;
+            const biasX = Math.sin(time * 0.5);
+            const biasY = Math.cos(time * 0.5);
+            
+            // 基础扩散 (填补空缺)
+            let flow = diff * diffusionCoeff * 0.1;
+            
+            // 迁徙偏置 (缓慢流动)
+            const dx = neighbor.x - cell.x;
+            const dy = neighbor.y - cell.y;
+            const biasFlow = (dx * biasX + dy * biasY) * 0.05;
+            
+            flow += biasFlow;
+            
+            // 限制流速
+            flow = Math.max(-2.0, Math.min(2.0, flow));
+            
+            // 累积变化 (注意方向：flow > 0 表示 neighbor -> cell)
+            energyChanges[y][x] += flow;
+            energyChanges[neighbor.y][neighbor.x] -= flow;
         }
-        
-        const nx = x * 0.1;
-        const ny = y * 0.1;
-        const time = this.timeStep * mantleTimeScale;
-        
-        const qx = Math.sin(nx + time);
-        const qy = Math.cos(ny + time);
-        
-        const noise = Math.sin(nx + qx * distortionSpeed + time) * 
-                      Math.cos(ny + qy * distortionSpeed + time);
-        
-        let energy = (noise * 0.5 + 0.5) * 100 * mantleEnergyLevel;
-        
-        cell.mantleEnergy += (energy - cell.mantleEnergy) * 0.1;
-        cell.mantleEnergy = Math.max(0, cell.mantleEnergy);
+      }
+    }
+    
+    // 应用能量变化
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const cell = this.grid[y][x];
+        if (cell.exists) {
+            cell.mantleEnergy += energyChanges[y][x];
+            // 软限制，允许轻微溢出但会被拉回
+            cell.mantleEnergy = Math.max(0, Math.min(150, cell.mantleEnergy));
+        }
+      }
+    }
+    
+    // 边缘扩张/缩减逻辑 (保持不变，但基于新的能量分布)
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const cell = this.grid[y][x];
+        if (!cell.exists) continue;
         
         const neighbors = this.getNeighbors(x, y);
-        const existingNeighbors = neighbors.filter(n => n.exists);
-        const avgNeighborEnergy = existingNeighbors.length > 0 
-          ? existingNeighbors.reduce((sum, n) => sum + n.mantleEnergy, 0) / existingNeighbors.length
-          : 0;
-          
-        const basePotential = cell.mantleEnergy - 50.0;
-        const neighborInfluence = (avgNeighborEnergy - 50.0) * 0.3;
-        cell.expansionPotential = basePotential + neighborInfluence;
-        
         const isEdge = neighbors.some(n => !n.exists);
-        const dx = x - centerX;
-        const dy = y - centerY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
         
         if (isEdge) {
-            if (cell.expansionPotential > 0) {
-                cell.expansionAccumulator += cell.expansionPotential * 0.1;
-                if (cell.expansionAccumulator > expansionThreshold) {
-                    const emptyNeighbors = neighbors.filter(n => !n.exists);
-                    if (emptyNeighbors.length > 0) {
-                        const validTargets = emptyNeighbors.filter(n => {
-                            const nDist = Math.sqrt((n.x - centerX) ** 2 + (n.y - centerY) ** 2);
-                            return nDist <= maxRadius;
-                        });
-                        
-                        if (validTargets.length > 0) {
-                            const target = validTargets[Math.floor(Math.random() * validTargets.length)];
-                            target.exists = true;
-                            target.mantleEnergy = cell.mantleEnergy * 0.8;
-                            cell.expansionAccumulator = 0;
-                        }
+            // 简单的扩张逻辑：能量过剩则扩张
+            if (cell.mantleEnergy > expansionThreshold) {
+                const emptyNeighbors = neighbors.filter(n => !n.exists);
+                if (emptyNeighbors.length > 0) {
+                    const validTargets = emptyNeighbors.filter(n => {
+                        const nDist = Math.sqrt((n.x - centerX) ** 2 + (n.y - centerY) ** 2);
+                        return nDist <= maxRadius;
+                    });
+                    
+                    if (validTargets.length > 0) {
+                        const target = validTargets[Math.floor(Math.random() * validTargets.length)];
+                        target.exists = true;
+                        target.mantleEnergy = cell.mantleEnergy * 0.5; // 分裂能量
+                        cell.mantleEnergy *= 0.5;
                     }
                 }
-            } else {
-                cell.shrinkAccumulator += Math.abs(cell.expansionPotential) * 0.1;
-                
-                if (dist > minRadius && cell.shrinkAccumulator > shrinkThreshold) {
+            } 
+            // 简单的缩减逻辑：能量过低则消失
+            else if (cell.mantleEnergy < shrinkThreshold) {
+                const dist = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+                if (dist > minRadius) {
+                    // 能量回流给邻居 (守恒)
+                    const existingNeighbors = neighbors.filter(n => n.exists);
+                    if (existingNeighbors.length > 0) {
+                        const energyPerNeighbor = cell.mantleEnergy / existingNeighbors.length;
+                        existingNeighbors.forEach(n => n.mantleEnergy += energyPerNeighbor);
+                    }
+                    
                     cell.exists = false;
                     cell.mantleEnergy = 0;
                     cell.crystalState = 'EMPTY';
-                    cell.shrinkAccumulator = 0;
                 }
             }
         }
