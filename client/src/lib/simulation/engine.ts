@@ -31,6 +31,8 @@ export interface SimulationParams {
   expansionThreshold: number;
   shrinkThreshold: number;
   depletionRate: number;
+  maxRadius: number; // New: Max radius for circular constraint
+  minRadius: number; // New: Min radius for circular constraint
   
   // Climate
   diffusionRate: number;
@@ -54,6 +56,8 @@ export const DEFAULT_PARAMS: SimulationParams = {
   expansionThreshold: 100.0,
   shrinkThreshold: 80.0,
   depletionRate: 0.01,
+  maxRadius: 22.0, // Default max radius (slightly less than half of 50)
+  minRadius: 5.0,  // Default min radius
   
   // Climate
   diffusionRate: 0.05,
@@ -90,16 +94,23 @@ export class SimulationEngine {
   
   initializeGrid(): Cell[][] {
     const grid: Cell[][] = [];
+    const centerX = this.width / 2;
+    const centerY = this.height / 2;
+    
     for (let y = 0; y < this.height; y++) {
       const row: Cell[] = [];
       for (let x = 0; x < this.width; x++) {
         // Initial circular terrain
-        const centerX = this.width / 2;
-        const centerY = this.height / 2;
         const dist = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
-        const maxRadius = Math.min(this.width, this.height) * 0.4;
+        const initialRadius = Math.min(this.width, this.height) * 0.4;
         
-        const exists = dist < maxRadius;
+        const exists = dist < initialRadius;
+        
+        // Initial Crystal: Place some Alpha crystals in the center
+        let crystalState: CellType = 'EMPTY';
+        if (exists && dist < 3) {
+            crystalState = 'ALPHA';
+        }
         
         row.push({
           x, y,
@@ -112,7 +123,7 @@ export class SimulationEngine {
           baseTemperature: 0,
           temperatureChange: 0,
           hasThunderstorm: false,
-          crystalState: 'EMPTY',
+          crystalState,
           crystalEnergy: 0,
         });
       }
@@ -134,7 +145,9 @@ export class SimulationEngine {
   
   // --- Mantle Layer ---
   updateMantleLayer() {
-    const { mantleTimeScale, expansionThreshold, shrinkThreshold, depletionRate } = this.params;
+    const { mantleTimeScale, expansionThreshold, shrinkThreshold, depletionRate, maxRadius, minRadius } = this.params;
+    const centerX = this.width / 2;
+    const centerY = this.height / 2;
     
     // 1. Update Energy (Simulated Perlin Noise for now)
     const depletionFactor = Math.max(0, 1.0 - this.cycleCount * depletionRate);
@@ -147,7 +160,7 @@ export class SimulationEngine {
             continue;
         }
         
-        // Simple noise simulation (replace with real Perlin later)
+        // Simple noise simulation
         const noise = Math.sin(x * 0.1 + this.timeStep * mantleTimeScale) * 
                       Math.cos(y * 0.1 + this.timeStep * mantleTimeScale);
         
@@ -166,25 +179,37 @@ export class SimulationEngine {
         const neighborInfluence = (avgNeighborEnergy - 50.0) * 0.3;
         cell.expansionPotential = basePotential + neighborInfluence;
         
-        // 3. Expand/Shrink Logic (Simplified)
+        // 3. Expand/Shrink Logic (Circular Constraint)
         const isEdge = neighbors.some(n => !n.exists);
+        const dist = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
         
         if (isEdge) {
             if (cell.expansionPotential > 0) {
                 cell.expansionAccumulator += cell.expansionPotential * 0.1;
                 if (cell.expansionAccumulator > expansionThreshold) {
-                    // Expand to a random empty neighbor
+                    // Expand to a random empty neighbor, BUT respect max radius
                     const emptyNeighbors = neighbors.filter(n => !n.exists);
                     if (emptyNeighbors.length > 0) {
-                        const target = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
-                        target.exists = true;
-                        target.mantleEnergy = cell.mantleEnergy * 0.8;
-                        cell.expansionAccumulator = 0;
+                        // Filter neighbors that are within max radius
+                        const validTargets = emptyNeighbors.filter(n => {
+                            const nDist = Math.sqrt((n.x - centerX) ** 2 + (n.y - centerY) ** 2);
+                            return nDist <= maxRadius;
+                        });
+                        
+                        if (validTargets.length > 0) {
+                            const target = validTargets[Math.floor(Math.random() * validTargets.length)];
+                            target.exists = true;
+                            target.mantleEnergy = cell.mantleEnergy * 0.8;
+                            cell.expansionAccumulator = 0;
+                        }
                     }
                 }
             } else {
                 cell.shrinkAccumulator += Math.abs(cell.expansionPotential) * 0.1;
-                if (cell.shrinkAccumulator > shrinkThreshold) {
+                
+                // Shrink logic: Respect min radius
+                // If distance > minRadius, allow shrinking
+                if (dist > minRadius && cell.shrinkAccumulator > shrinkThreshold) {
                     cell.exists = false;
                     cell.mantleEnergy = 0;
                     cell.crystalState = 'EMPTY';
@@ -263,9 +288,6 @@ export class SimulationEngine {
     // Temporary grid for next state
     const nextStates: CellType[][] = this.grid.map(row => row.map(c => c.crystalState));
     
-    // 1. Calculate Energy Input & Network Sharing (Simplified for MVP: Local + Neighbor Avg)
-    // Full BFS network sharing is expensive for JS loop every frame, using localized approximation
-    
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const cell = this.grid[y][x];
@@ -296,8 +318,6 @@ export class SimulationEngine {
             }
         } else if (cell.crystalState === 'ALPHA') {
             // Rule 2: Hardening (Starvation)
-            // Simplified: If local input < demand (assuming network can't save it forever)
-            // In full version, this would check network surplus
             if (energyInput < alphaEnergyDemand) {
                 // Chance to survive if neighbors are rich
                 const richNeighbors = alphaNeighbors.filter(n => n.crystalEnergy > alphaEnergyDemand * 1.5);
@@ -311,7 +331,7 @@ export class SimulationEngine {
                 nextStates[y][x] = 'EMPTY';
             }
         } else if (cell.crystalState === 'BETA') {
-            // Rule 3: Irreversible (unless harvested - player interaction not in auto-sim)
+            // Rule 3: Irreversible
             nextStates[y][x] = 'BETA';
         }
       }

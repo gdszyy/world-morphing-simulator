@@ -1,14 +1,37 @@
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DEFAULT_PARAMS, SimulationEngine, SimulationParams } from "@/lib/simulation/engine";
 import * as d3 from "d3";
-import { Pause, Play, RefreshCw, Settings2, ZoomIn, ZoomOut } from "lucide-react";
+import { HelpCircle, Pause, Play, RefreshCw, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+
+// Parameter Descriptions
+const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string }> = {
+  mantleTimeScale: { desc: "Speed of mantle energy change over time", impact: "High: Fast terrain changes / Low: Stable terrain" },
+  expansionThreshold: { desc: "Energy required to expand terrain", impact: "High: Harder to expand / Low: Rapid expansion" },
+  shrinkThreshold: { desc: "Negative energy required to shrink terrain", impact: "High: Harder to shrink / Low: Rapid shrinking" },
+  depletionRate: { desc: "Rate at which mantle energy decays per cycle", impact: "High: Fast world death / Low: Long-lasting world" },
+  maxRadius: { desc: "Maximum radius for terrain expansion", impact: "High: Larger map / Low: Smaller map" },
+  minRadius: { desc: "Minimum radius for terrain shrinking", impact: "High: Larger core / Low: Smaller core" },
+  
+  diffusionRate: { desc: "Speed of temperature spread", impact: "High: Uniform temp / Low: High gradients" },
+  advectionRate: { desc: "Speed of temperature flow along gradients", impact: "High: Fast weather movement / Low: Static weather" },
+  thunderstormThreshold: { desc: "Temp difference required for thunder", impact: "High: Fewer storms / Low: More storms" },
+  seasonalAmplitude: { desc: "Strength of seasonal temp changes", impact: "High: Extreme seasons / Low: Mild seasons" },
+  
+  alphaEnergyDemand: { desc: "Energy needed for Alpha crystal survival", impact: "High: Hard to survive / Low: Easy growth" },
+  betaEnergyDemand: { desc: "Energy needed for Beta crystal (unused)", impact: "N/A" },
+  mantleAbsorption: { desc: "Efficiency of absorbing mantle energy", impact: "High: Fast growth / Low: Slow growth" },
+  thunderstormEnergy: { desc: "Bonus energy from thunderstorms", impact: "High: Storms boost growth / Low: Storms less effective" },
+  invasionThreshold: { desc: "Neighbors needed to invade empty space", impact: "High: Slow expansion / Low: Fast expansion" },
+  invasionEnergyFactor: { desc: "Energy multiplier for invasion", impact: "High: Harder to invade / Low: Easier to invade" },
+  harvestThreshold: { desc: "Harvest threshold (unused in auto-sim)", impact: "N/A" },
+};
 
 export default function Home() {
   // State
@@ -163,8 +186,6 @@ export default function Home() {
         }
         
         ctx.fillRect(px, py, cellSize, cellSize);
-        // ctx.strokeStyle = '#262626';
-        // ctx.strokeRect(px, py, cellSize, cellSize);
       }
     }
     
@@ -181,6 +202,35 @@ export default function Home() {
     const canvas = d3.select(canvasRef.current);
     canvas.call(d3.zoom<HTMLCanvasElement, unknown>().transform, d3.zoomIdentity);
   };
+  
+  const resetParams = () => {
+      setParams(DEFAULT_PARAMS);
+  };
+
+  const ParamControl = ({ label, paramKey, min, max, step }: { label: string, paramKey: keyof SimulationParams, min: number, max: number, step: number }) => (
+    <div className="space-y-1">
+      <div className="flex justify-between text-xs items-center">
+        <div className="flex items-center gap-1">
+            <span>{label}</span>
+            <Tooltip>
+                <TooltipTrigger>
+                    <HelpCircle className="w-3 h-3 text-neutral-500" />
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs bg-neutral-800 border-neutral-700 text-neutral-200">
+                    <p className="font-bold mb-1">{PARAM_INFO[paramKey].desc}</p>
+                    <p className="text-xs text-neutral-400">{PARAM_INFO[paramKey].impact}</p>
+                </TooltipContent>
+            </Tooltip>
+        </div>
+        <span>{params[paramKey]}</span>
+      </div>
+      <Slider 
+        min={min} max={max} step={step} 
+        value={[params[paramKey]]} 
+        onValueChange={([v]) => setParams({...params, [paramKey]: v})}
+      />
+    </div>
+  );
 
   return (
     <div className="h-screen w-screen flex flex-col bg-neutral-950 text-neutral-200 font-mono overflow-hidden">
@@ -317,74 +367,32 @@ export default function Home() {
             </TabsContent>
             
             <TabsContent value="params" className="flex-1 p-4 space-y-6 overflow-y-auto">
+              <div className="flex justify-end">
+                  <Button variant="ghost" size="sm" onClick={resetParams} className="text-xs h-6">
+                      <RotateCcw className="w-3 h-3 mr-1" /> Reset Defaults
+                  </Button>
+              </div>
+              
               {/* Mantle Params */}
               <div className="space-y-3">
                 <Label className="text-xs uppercase text-red-500 font-bold">Mantle Layer</Label>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span>Depletion Rate</span>
-                    <span>{params.depletionRate}</span>
-                  </div>
-                  <Slider 
-                    min={0} max={0.05} step={0.001} 
-                    value={[params.depletionRate]} 
-                    onValueChange={([v]) => setParams({...params, depletionRate: v})}
-                  />
-                </div>
+                <ParamControl label="Depletion Rate" paramKey="depletionRate" min={0} max={0.05} step={0.001} />
+                <ParamControl label="Max Radius" paramKey="maxRadius" min={10} max={40} step={1} />
+                <ParamControl label="Min Radius" paramKey="minRadius" min={0} max={20} step={1} />
               </div>
               
               {/* Climate Params */}
               <div className="space-y-3">
                 <Label className="text-xs uppercase text-blue-500 font-bold">Climate Layer</Label>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span>Diffusion</span>
-                    <span>{params.diffusionRate}</span>
-                  </div>
-                  <Slider 
-                    min={0} max={0.2} step={0.01} 
-                    value={[params.diffusionRate]} 
-                    onValueChange={([v]) => setParams({...params, diffusionRate: v})}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span>Thunder Threshold</span>
-                    <span>{params.thunderstormThreshold}</span>
-                  </div>
-                  <Slider 
-                    min={5} max={30} step={1} 
-                    value={[params.thunderstormThreshold]} 
-                    onValueChange={([v]) => setParams({...params, thunderstormThreshold: v})}
-                  />
-                </div>
+                <ParamControl label="Diffusion" paramKey="diffusionRate" min={0} max={0.2} step={0.01} />
+                <ParamControl label="Thunder Threshold" paramKey="thunderstormThreshold" min={5} max={30} step={1} />
               </div>
               
               {/* Crystal Params */}
               <div className="space-y-3">
                 <Label className="text-xs uppercase text-emerald-500 font-bold">Crystal Layer</Label>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span>Alpha Demand</span>
-                    <span>{params.alphaEnergyDemand}</span>
-                  </div>
-                  <Slider 
-                    min={1} max={10} step={0.5} 
-                    value={[params.alphaEnergyDemand]} 
-                    onValueChange={([v]) => setParams({...params, alphaEnergyDemand: v})}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span>Invasion Threshold</span>
-                    <span>{params.invasionThreshold}</span>
-                  </div>
-                  <Slider 
-                    min={1} max={5} step={1} 
-                    value={[params.invasionThreshold]} 
-                    onValueChange={([v]) => setParams({...params, invasionThreshold: v})}
-                  />
-                </div>
+                <ParamControl label="Alpha Demand" paramKey="alphaEnergyDemand" min={1} max={10} step={0.5} />
+                <ParamControl label="Invasion Threshold" paramKey="invasionThreshold" min={1} max={5} step={1} />
               </div>
             </TabsContent>
           </Tabs>
