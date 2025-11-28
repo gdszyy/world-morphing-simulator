@@ -774,7 +774,7 @@ export default function Home() {
                 <ParamControl label="边缘生成能量" paramKey="edgeGenerationEnergy" min={0} max={20} step={0.1} />
                 <ParamControl label="供给点数量(需重启)" paramKey="edgeSupplyPointCount" min={1} max={10} step={1} />
                 <ParamControl label="供给点迁移速度" paramKey="edgeSupplyPointSpeed" min={0} max={0.5} step={0.01} />
-                <ParamControl label="地幔热量系数" paramKey="mantleHeatFactor" min={0} max={200} step={0.1} />
+                <ParamControl label="地幔热量系数" paramKey="mantleHeatFactor" min={0} max={200} step={1} />
               </div>
               
               {/* 气候层参数 */}

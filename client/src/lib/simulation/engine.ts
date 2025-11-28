@@ -609,12 +609,18 @@ export class SimulationEngine {
         let newTemp = cell.temperature * (1 - diffusionRate) + avgTemp * diffusionRate;
         
         // 地幔加热 (地热)
-        // 地幔能量越高，温度越高
-        // 假设地幔能量 100 对应温度增加 10度 (系数 0.1)
-        newTemp += cell.mantleEnergy * mantleHeatFactor * 0.1;
+        // 基础温度 -100度
+        // 地幔能量 (0-100+) 贡献温度，受 mantleHeatFactor (0-200) 控制
+        // 逻辑：Temp = -100 + (MantleEnergy / 100) * MantleHeatFactor
+        // 但为了平滑过渡，我们使用混合更新：
+        // TargetTemp = -100 + (cell.mantleEnergy / 100) * mantleHeatFactor
+        // newTemp = currentTemp * 0.9 + TargetTemp * 0.1 (趋向目标温度)
         
-        // 环境冷却 (模拟辐射冷却)
-        newTemp -= 0.5;
+        const targetTemp = -100 + (cell.mantleEnergy / 100) * mantleHeatFactor;
+        
+        // 移除之前的累加逻辑，改为趋向目标值，这样更稳定且符合用户要求的"加权得到一个值"
+        // 使用较小的混合系数模拟热容
+        newTemp = newTemp * 0.9 + targetTemp * 0.1;
         
         // 季节性波动 (正弦波)
         // const season = Math.sin(this.timeStep * 0.01) * this.params.seasonalAmplitude;
