@@ -102,7 +102,6 @@ export interface SimulationParams {
   humanMiningReward: number;
   humanMigrationThreshold: number;
   alphaRadiationDamage: number;
-  humanRespawnDelay: number; // 人类重生延迟 (步数)
   humanSpawnPoint?: {x: number, y: number};
 }
 
@@ -160,7 +159,6 @@ export const DEFAULT_PARAMS: SimulationParams = {
   humanMiningReward: 27,
   humanMigrationThreshold: 42,
   alphaRadiationDamage: 20,
-  humanRespawnDelay: 20, // 默认20步
 };
 
 export class SimulationEngine {
@@ -192,10 +190,6 @@ export class SimulationEngine {
       speed: (Math.random() - 0.5) * (params.edgeSupplyPointSpeed || 0.05)
     }));
     this.grid = this.initializeGrid();
-  }
-
-  updateParams(newParams: SimulationParams) {
-      this.params = { ...this.params, ...newParams };
   }
   
   initializeGrid(): Cell[][] {
@@ -457,8 +451,8 @@ export class SimulationEngine {
         cell.isAbsorbing = false;
         cell.crystalEnergy = 0;
         
-        // 吸收地幔能量 (仅 Alpha 晶石吸收)
-        if (cell.crystalState === 'ALPHA' && cell.mantleEnergy > 10) {
+        // 吸收地幔能量
+        if (cell.mantleEnergy > 10) {
             const absorbed = cell.mantleEnergy * mantleAbsorption;
             cell.storedEnergy += absorbed;
             cell.crystalEnergy += absorbed;
@@ -629,7 +623,7 @@ export class SimulationEngine {
                 this.bioExtinctionStep = this.timeStep;
             }
             
-            if (this.timeStep - this.bioExtinctionStep >= this.params.humanRespawnDelay) {
+            if (this.timeStep - this.bioExtinctionStep >= 20) {
                 this.spawnHuman(100);
                 this.bioExtinctionStep = null;
             }
