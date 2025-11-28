@@ -9,6 +9,7 @@ import { DEFAULT_PARAMS, SimulationEngine, SimulationParams } from "@/lib/simula
 import * as d3 from "d3";
 import { FastForward, HelpCircle, Pause, Play, RefreshCw, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import HumanBehaviorTool, { ToolType } from "@/components/HumanBehaviorTool";
 
 // 参数说明 (汉化)
 const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string }> = {
@@ -32,6 +33,8 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   expansionCost: { desc: "扩张到新地块所需的能量", impact: "高: 扩张慢 / 低: 扩张快" },
   maxCrystalEnergy: { desc: "晶石可存储的最大能量", impact: "高: 生存力强 / 低: 容易硬化" },
   harvestThreshold: { desc: "采集阈值 (自动模拟中未使用)", impact: "N/A" },
+  edgeGenerationWidth: { desc: "边缘能量生成的宽度范围（格数）", impact: "高：边缘生成范围更广 / 低：仅在紧邻边缘处生成" },
+  edgeGenerationEnergy: { desc: "边缘每格每次迭代生成的能量值", impact: "高：边缘快速扩张 / 低：边缘扩张缓慢" },
 };
 
 export default function Home() {
@@ -45,6 +48,10 @@ export default function Home() {
   const [isRestartOpen, setIsRestartOpen] = useState(false);
   const [speedMultiplier, setSpeedMultiplier] = useState(1); // 播放速率倍数 (支持小数)
   
+  // Human Behavior Tool State
+  const [activeTool, setActiveTool] = useState<ToolType>('none');
+  const [brushSize, setBrushSize] = useState(3);
+
   // Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(0);
@@ -59,6 +66,13 @@ export default function Home() {
     
     const zoom = d3.zoom<HTMLCanvasElement, unknown>()
       .scaleExtent([0.5, 10])
+      .filter((event) => {
+        // 如果当前是摧毁模式，且按下左键，则禁用缩放/拖拽，优先处理点击
+        if (activeTool === 'destroy' && event.type === 'mousedown' && event.button === 0) {
+          return false;
+        }
+        return !event.ctrlKey && !event.button;
+      })
       .on("zoom", (event: d3.D3ZoomEvent<HTMLCanvasElement, unknown>) => {
         if (!context) return;
         const { transform } = event;
@@ -129,13 +143,68 @@ export default function Home() {
   useEffect(() => {
     requestRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(requestRef.current);
-  }, [isPlaying, engine, activeLayer, speedMultiplier]); // Dependencies for loop
+  }, [isPlaying, engine, activeLayer, speedMultiplier, activeTool, brushSize]); // Dependencies for loop
   
   // Update Params
   useEffect(() => {
     engine.params = params;
   }, [params]);
   
+  // Handle Canvas Interaction
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (activeTool !== 'destroy' || !canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const transform = d3.zoomTransform(canvas);
+    
+    // Calculate click position in canvas coordinates
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    
+    // Transform to grid coordinates
+    // transform.x/y is translation, k is scale
+    // gridX = (clickX - transform.x - offsetX) / (k * cellSize)
+    
+    const cellSize = 10;
+    const gridWidth = engine.width * cellSize;
+    const gridHeight = engine.height * cellSize;
+    const offsetX = (canvas.width / transform.k - gridWidth) / 2;
+    const offsetY = (canvas.height / transform.k - gridHeight) / 2;
+    
+    const rawX = (clickX - transform.x) / transform.k - offsetX;
+    const rawY = (clickY - transform.y) / transform.k - offsetY;
+    
+    const gridX = Math.floor(rawX / cellSize);
+    const gridY = Math.floor(rawY / cellSize);
+    
+    // Apply brush
+    const halfBrush = Math.floor(brushSize / 2);
+    const startX = gridX - halfBrush;
+    const startY = gridY - halfBrush;
+    
+    let modified = false;
+    
+    for (let y = startY; y < startY + brushSize; y++) {
+      for (let x = startX; x < startX + brushSize; x++) {
+        if (x >= 0 && x < engine.width && y >= 0 && y < engine.height) {
+          const cell = engine.grid[y][x];
+          if (cell.exists && cell.crystalState !== 'EMPTY') {
+            cell.crystalState = 'EMPTY';
+            cell.crystalEnergy = 0;
+            cell.storedEnergy = 0;
+            modified = true;
+          }
+        }
+      }
+    }
+    
+    if (modified) {
+      // Force re-render
+      render(transform);
+    }
+  };
+
   // Render Function
   const render = (transform: d3.ZoomTransform) => {
     const canvas = canvasRef.current;
@@ -479,18 +548,26 @@ export default function Home() {
                 <ParamControl label="Alpha生存需求" paramKey="alphaEnergyDemand" min={1} max={10} step={0.5} />
                 <ParamControl label="扩张消耗" paramKey="expansionCost" min={5} max={50} step={1} />
                 <ParamControl label="能量上限" paramKey="maxCrystalEnergy" min={10} max={100} step={5} />
+                <ParamControl label="雷暴能量" paramKey="thunderstormEnergy" min={0} max={50} step={1} />
               </div>
             </TabsContent>
           </Tabs>
         </aside>
         
         {/* Main Canvas Area */}
-        <main className="flex-1 bg-black relative overflow-hidden cursor-move">
+        <main className={`flex-1 bg-black relative overflow-hidden ${activeTool === 'destroy' ? 'cursor-crosshair' : 'cursor-move'}`}>
+          <HumanBehaviorTool 
+            activeTool={activeTool}
+            onToolChange={setActiveTool}
+            brushSize={brushSize}
+            onBrushSizeChange={setBrushSize}
+          />
           <canvas 
             ref={canvasRef}
             width={1200}
             height={800}
             className="block w-full h-full"
+            onClick={handleCanvasClick}
           />
           
           {/* Overlay Controls */}

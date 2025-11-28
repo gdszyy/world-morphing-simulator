@@ -57,29 +57,29 @@ export interface SimulationParams {
 
 export const DEFAULT_PARAMS: SimulationParams = {
   // 地幔层
-  mantleTimeScale: 0.002,
-    expansionThreshold: 10,
-    shrinkThreshold: 5,
-  mantleEnergyLevel: 1.5,
-  maxRadius: 22.0,
-  minRadius: 5.0,
+  mantleTimeScale: 0.002, // Not in screenshot, keeping default
+  expansionThreshold: 123,
+  shrinkThreshold: 20,
+  mantleEnergyLevel: 100,
+  maxRadius: 25,
+  minRadius: 5,
   distortionSpeed: 0.01,
   edgeGenerationWidth: 2,
-  edgeGenerationEnergy: 0.5,
+  edgeGenerationEnergy: 10,
   
   // 气候层
-  diffusionRate: 0.05,
-  advectionRate: 0.02,
-  thunderstormThreshold: 15.0,
-  seasonalAmplitude: 5.0,
+  diffusionRate: 0.12,
+  advectionRate: 0.02, // Not in screenshot, keeping default
+  thunderstormThreshold: 18,
+  seasonalAmplitude: 5.0, // Not in screenshot, keeping default
   
   // 晶石层
-  alphaEnergyDemand: 5.0,
-  betaEnergyDemand: 2.0,
-  mantleAbsorption: 0.1,
-  thunderstormEnergy: 10.0,
-  expansionCost: 20.0,
-  maxCrystalEnergy: 50.0,
+  alphaEnergyDemand: 1.5,
+  betaEnergyDemand: 2.0, // Not in screenshot, keeping default
+  mantleAbsorption: 0.1, // Not in screenshot, keeping default
+  thunderstormEnergy: 10.0, // Will be updated later if needed, currently 10 in default
+  expansionCost: 8,
+  maxCrystalEnergy: 80,
   harvestThreshold: 0.8,
 };
 
