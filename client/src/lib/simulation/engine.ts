@@ -61,6 +61,7 @@ export interface SimulationParams {
   maxCrystalEnergy: number; // 晶石能量上限
   energySharingRate: number; // 能量共享率
   energySharingLimit: number; // 能量共享上限 (倍率)
+  energyDecayRate: number; // 能量传输衰减率
   harvestThreshold: number;
 
   // 人类层参数
