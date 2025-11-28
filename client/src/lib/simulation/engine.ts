@@ -1,7 +1,7 @@
 import { generatePerlinNoise } from './perlin';
 
 // 类型定义
-export type CellType = 'EMPTY' | 'ALPHA' | 'BETA';
+export type CellType = 'EMPTY' | 'ALPHA' | 'BETA' | 'HUMAN';
 
 export interface Cell {
   x: number;
@@ -26,6 +26,9 @@ export interface Cell {
   storedEnergy: number; // 累积能量 (用于扩张)
   isAbsorbing: boolean; // 是否正在吸收能量
   energyFlow: { x: number, y: number, amount: number }[]; // 能量流向记录 (目标x, 目标y, 数量)
+
+  // 人类层
+  prosperity: number; // 繁荣度
 }
 
 export interface SimulationParams {
@@ -58,6 +61,17 @@ export interface SimulationParams {
   maxCrystalEnergy: number; // 晶石能量上限
   energySharingRate: number; // 能量共享率
   harvestThreshold: number;
+
+  // 人类层参数
+  humanMinTemp: number; // 适宜温度下限
+  humanMaxTemp: number; // 适宜温度上限
+  humanSurvivalMinTemp: number; // 生存温度下限 (低于此值死亡)
+  humanSurvivalMaxTemp: number; // 生存温度上限 (高于此值死亡)
+  humanProsperityGrowth: number; // 适宜温度下的繁荣度增长
+  humanProsperityDecay: number; // 不适宜温度下的繁荣度衰减
+  humanExpansionThreshold: number; // 扩张所需的繁荣度阈值
+  humanMiningReward: number; // 消除Beta晶石获得的繁荣度
+  humanMigrationThreshold: number; // 低于此繁荣度开始迁移
 }
 
 export const DEFAULT_PARAMS: SimulationParams = {
@@ -90,6 +104,17 @@ export const DEFAULT_PARAMS: SimulationParams = {
   maxCrystalEnergy: 80,
   energySharingRate: 0.1,
   harvestThreshold: 0.8,
+
+  // 人类层
+  humanMinTemp: -10,
+  humanMaxTemp: 25,
+  humanSurvivalMinTemp: -30,
+  humanSurvivalMaxTemp: 45,
+  humanProsperityGrowth: 0.5,
+  humanProsperityDecay: 1.0,
+  humanExpansionThreshold: 80,
+  humanMiningReward: 20,
+  humanMigrationThreshold: 40,
 };
 
 export class SimulationEngine {
@@ -153,6 +178,7 @@ export class SimulationEngine {
           storedEnergy: 10.0, // 初始能量
           isAbsorbing: false,
           energyFlow: [],
+          prosperity: 0,
         });
       }
       grid.push(row);
@@ -169,8 +195,169 @@ export class SimulationEngine {
     this.updateMantleLayer();
     this.updateClimateLayer();
     this.updateCrystalLayer();
+    this.updateHumanLayer();
   }
+
+  // initializeGrid 已经在前面定义过了，这里不需要重复定义
+  // 我们将人类初始化的逻辑整合到 updateHumanLayer 中，或者在构造函数中调用一个单独的初始化方法
+  // 但为了保持代码结构清晰，我们删除这里重复且错误的 initializeGrid 定义
+  // updateHumanLayer 已经包含了初始化逻辑 (如果人类数量为0则生成)
   
+  updateHumanLayer() {
+    const {
+        humanMinTemp, humanMaxTemp, humanSurvivalMinTemp, humanSurvivalMaxTemp,
+        humanProsperityGrowth, humanProsperityDecay, humanExpansionThreshold,
+        humanMiningReward, humanMigrationThreshold
+    } = this.params;
+
+    // 1. 检查是否需要初始化人类 (如果没有人类存在)
+    let humanCount = 0;
+    for (let y = 0; y < this.height; y++) {
+        for (let x = 0; x < this.width; x++) {
+            if (this.grid[y][x].crystalState === 'HUMAN') {
+                humanCount++;
+            }
+        }
+    }
+
+    if (humanCount === 0) {
+        // 随机生成一个人类聚落
+        let attempts = 0;
+        while (attempts < 100) {
+            const rx = Math.floor(Math.random() * this.width);
+            const ry = Math.floor(Math.random() * this.height);
+            const cell = this.grid[ry][rx];
+            // 优先选择温度适宜的地方
+            const isTempSuitable = cell.temperature >= humanMinTemp && cell.temperature <= humanMaxTemp;
+            
+            if (cell.exists && cell.crystalState !== 'ALPHA' && (isTempSuitable || attempts > 50)) {
+                cell.crystalState = 'HUMAN';
+                cell.prosperity = 50;
+                break;
+            }
+            attempts++;
+        }
+        return; //这一帧只做初始化
+    }
+
+    // 2. 更新人类状态
+    // 使用临时网格记录变更，避免顺序依赖
+    const changes: {x: number, y: number, type: 'PROSPERITY' | 'STATE' | 'MIGRATE', value?: number, toX?: number, toY?: number}[] = [];
+
+    for (let y = 0; y < this.height; y++) {
+        for (let x = 0; x < this.width; x++) {
+            const cell = this.grid[y][x];
+            if (cell.crystalState !== 'HUMAN') continue;
+
+            // A. 温度检查
+            if (cell.temperature < humanSurvivalMinTemp || cell.temperature > humanSurvivalMaxTemp) {
+                // 极端温度，直接抹杀
+                changes.push({x, y, type: 'STATE', value: 0}); // 0 for EMPTY (or just not HUMAN)
+                continue;
+            }
+
+            // B. 繁荣度更新
+            let prosperityChange = 0;
+            if (cell.temperature >= humanMinTemp && cell.temperature <= humanMaxTemp) {
+                prosperityChange += humanProsperityGrowth;
+            } else {
+                prosperityChange -= humanProsperityDecay;
+            }
+
+            // 邻居加成
+            const neighbors = this.getNeighbors(x, y);
+            const humanNeighbors = neighbors.filter(n => n.crystalState === 'HUMAN');
+            prosperityChange += humanNeighbors.length * 0.1; // 每个邻居提供少量加成
+
+            // C. 采矿 (消除相邻 Beta 晶石)
+            const betaNeighbors = neighbors.filter(n => n.crystalState === 'BETA');
+            if (betaNeighbors.length > 0) {
+                // 随机选择一个开采
+                const target = betaNeighbors[Math.floor(Math.random() * betaNeighbors.length)];
+                // 记录消除 Beta
+                changes.push({x: target.x, y: target.y, type: 'STATE', value: 0}); // 变为 EMPTY
+                prosperityChange += humanMiningReward;
+            }
+
+            // 应用繁荣度变化
+            changes.push({x, y, type: 'PROSPERITY', value: cell.prosperity + prosperityChange});
+
+            // D. 扩张
+            if (cell.prosperity + prosperityChange > humanExpansionThreshold) {
+                // 尝试扩张到空地或 Beta 格
+                const validTargets = neighbors.filter(n => n.exists && n.crystalState !== 'ALPHA' && n.crystalState !== 'HUMAN');
+                if (validTargets.length > 0) {
+                    const target = validTargets[Math.floor(Math.random() * validTargets.length)];
+                    changes.push({x: target.x, y: target.y, type: 'STATE', value: 1}); // 1 for HUMAN
+                    // 扩张消耗繁荣度
+                    changes.push({x, y, type: 'PROSPERITY', value: (cell.prosperity + prosperityChange) * 0.6});
+                }
+            }
+
+            // E. 迁移
+            if (cell.prosperity + prosperityChange < humanMigrationThreshold) {
+                // 繁荣度越低，迁移意愿越强 (这里简化为每帧尝试迁移)
+                // 寻找更好的位置：温度更适宜 或 有 Beta 晶石
+                const bestNeighbor = neighbors
+                    .filter(n => n.exists && n.crystalState === 'EMPTY')
+                    .sort((a, b) => {
+                        // 评分标准：温度适宜度 + Beta 邻居数量
+                        const scoreA = (a.temperature >= humanMinTemp && a.temperature <= humanMaxTemp ? 10 : 0) + 
+                                       this.getNeighbors(a.x, a.y).filter(nn => nn.crystalState === 'BETA').length * 5;
+                        const scoreB = (b.temperature >= humanMinTemp && b.temperature <= humanMaxTemp ? 10 : 0) + 
+                                       this.getNeighbors(b.x, b.y).filter(nn => nn.crystalState === 'BETA').length * 5;
+                        return scoreB - scoreA;
+                    })[0];
+
+                if (bestNeighbor) {
+                    // 迁移概率与繁荣度成反比 (繁荣度越低越快)
+                    const migrationChance = 1 - (cell.prosperity / humanMigrationThreshold);
+                    if (Math.random() < migrationChance) {
+                        changes.push({x, y, type: 'MIGRATE', toX: bestNeighbor.x, toY: bestNeighbor.y, value: cell.prosperity});
+                    }
+                }
+            }
+        }
+    }
+
+    // 应用变更
+    for (const change of changes) {
+        const targetCell = this.grid[change.y][change.x];
+        
+        if (change.type === 'STATE') {
+            if (change.value === 0) { // Become EMPTY
+                if (targetCell.crystalState === 'HUMAN' || targetCell.crystalState === 'BETA') {
+                    targetCell.crystalState = 'EMPTY';
+                    targetCell.prosperity = 0;
+                }
+            } else if (change.value === 1) { // Become HUMAN
+                targetCell.crystalState = 'HUMAN';
+                targetCell.prosperity = 30; // 新扩张的初始繁荣度
+            }
+        } else if (change.type === 'PROSPERITY') {
+            if (targetCell.crystalState === 'HUMAN') {
+                targetCell.prosperity = Math.max(0, Math.min(100, change.value!));
+            }
+        } else if (change.type === 'MIGRATE') {
+            // 确保源还是 HUMAN (可能被其他事件改变)
+            if (targetCell.crystalState === 'HUMAN') {
+                const destCell = this.grid[change.toY!][change.toX!];
+                if (destCell.crystalState === 'EMPTY') {
+                    // 移动
+                    destCell.crystalState = 'HUMAN';
+                    destCell.prosperity = change.value!;
+                    targetCell.crystalState = 'EMPTY';
+                    targetCell.prosperity = 0;
+                }
+            }
+        }
+    }
+    
+    // Alpha 覆盖 Human (在 updateCrystalLayer 中处理，或者在这里补充)
+    // 规则：扩展的alpha晶石格可以直接覆盖人类格
+    // 这部分逻辑应该在 updateCrystalLayer 的扩张逻辑中，确保 Alpha 视 Human 为可占据目标
+  }
+
   updateMantleLayer() {
     const { 
         mantleTimeScale, expansionThreshold, shrinkThreshold, 

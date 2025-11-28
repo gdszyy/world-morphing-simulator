@@ -604,6 +604,13 @@ export default function Home() {
                     <div className="flex items-center gap-2"><div className="w-3 h-3 border border-white/50"></div> 正在吸收能量</div>
                   </>
                 )}
+                {activeLayer === 'human' && (
+                  <>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-orange-500"></div> 人类聚落 (高繁荣)</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-orange-900"></div> 人类聚落 (低繁荣)</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-blue-500/30"></div> 适宜温度区</div>
+                  </>
+                )}
                 {activeLayer === 'mantle' && (
                   <>
                     <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-600"></div> 高能量</div>
@@ -680,6 +687,20 @@ export default function Home() {
                   <ParamControl label="能量上限" paramKey="maxCrystalEnergy" min={10} max={200} step={5} />
                   <ParamControl label="雷暴能量" paramKey="thunderstormEnergy" min={0} max={50} step={1} />
                   <ParamControl label="能量共享率" paramKey="energySharingRate" min={0} max={0.5} step={0.01} />
+              </div>
+
+              {/* 人类层参数 */}
+                <div className="space-y-3">
+                  <Label className="text-xs uppercase text-orange-500 font-bold">人类层参数</Label>
+                  <ParamControl label="适宜温度下限" paramKey="humanMinTemp" min={-50} max={50} step={1} />
+                  <ParamControl label="适宜温度上限" paramKey="humanMaxTemp" min={-50} max={50} step={1} />
+                  <ParamControl label="生存温度下限" paramKey="humanSurvivalMinTemp" min={-50} max={50} step={1} />
+                  <ParamControl label="生存温度上限" paramKey="humanSurvivalMaxTemp" min={-50} max={50} step={1} />
+                  <ParamControl label="繁荣度增长" paramKey="humanProsperityGrowth" min={0} max={5} step={0.1} />
+                  <ParamControl label="繁荣度衰减" paramKey="humanProsperityDecay" min={0} max={5} step={0.1} />
+                  <ParamControl label="扩张阈值" paramKey="humanExpansionThreshold" min={10} max={200} step={5} />
+                  <ParamControl label="采矿奖励" paramKey="humanMiningReward" min={0} max={100} step={5} />
+                  <ParamControl label="迁移阈值" paramKey="humanMigrationThreshold" min={0} max={100} step={5} />
                 </div>
               </TabsContent>
             </Tabs>
