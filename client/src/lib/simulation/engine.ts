@@ -108,10 +108,10 @@ export const DEFAULT_PARAMS: SimulationParams = {
   harvestThreshold: 0.8,
 
   // 人类层
-  humanMinTemp: -10,
-  humanMaxTemp: 25,
-  humanSurvivalMinTemp: -30,
-  humanSurvivalMaxTemp: 45,
+  humanMinTemp: 15, // 舒适温度下限 (真实数据参考)
+  humanMaxTemp: 25, // 舒适温度上限 (真实数据参考)
+  humanSurvivalMinTemp: -50, // 生存极限低温
+  humanSurvivalMaxTemp: 50, // 生存极限高温
   humanProsperityGrowth: 0.5,
   humanProsperityDecay: 1.0,
   humanExpansionThreshold: 80,

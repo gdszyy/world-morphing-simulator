@@ -322,18 +322,43 @@ export default function Home() {
             ctx.fillStyle = `rgb(${intensity * 255}, ${intensity * 100}, 0)`;
             ctx.fillRect(px, py, cellSize, cellSize);
         } else if (activeLayer === 'climate') {
-            // Temperature: Blue (Cold) -> White (Neutral) -> Red (Hot)
-            // Range -50 to 50
-            const t = (cell.temperature + 50) / 100;
-            if (t < 0.5) {
-                // Blue to White
-                const v = t * 2;
-                ctx.fillStyle = `rgb(${v*255}, ${v*255}, 255)`;
+            // Temperature Visualization centered on Ideal Human Temp (e.g., 35°C)
+            // Ideal (35°C) -> White
+            // Hotter (>35°C) -> Red
+            // Colder (<35°C) -> Blue
+            
+            const idealTemp = 35;
+            const maxTemp = 85; // 35 + 50
+            const minTemp = -15; // 35 - 50
+            
+            let r, g, b;
+            
+            if (cell.temperature > idealTemp) {
+                // Hotter: White -> Red
+                // Normalize (idealTemp, maxTemp] to (0, 1]
+                const t = Math.min(1, (cell.temperature - idealTemp) / (maxTemp - idealTemp));
+                // White (255,255,255) -> Red (255, 0, 0)
+                // R: 255
+                // G: 255 * (1-t)
+                // B: 255 * (1-t)
+                r = 255;
+                g = Math.round(255 * (1 - t));
+                b = Math.round(255 * (1 - t));
             } else {
-                // White to Red
-                const v = (t - 0.5) * 2;
-                ctx.fillStyle = `rgb(255, ${(1-v)*255}, ${(1-v)*255})`;
+                // Colder: Blue -> White
+                // Normalize [minTemp, idealTemp) to [0, 1)
+                // t=0 (minTemp) -> Blue, t=1 (idealTemp) -> White
+                const t = Math.max(0, (cell.temperature - minTemp) / (idealTemp - minTemp));
+                // Blue (0, 0, 255) -> White (255, 255, 255)
+                // R: 255 * t
+                // G: 255 * t
+                // B: 255
+                r = Math.round(255 * t);
+                g = Math.round(255 * t);
+                b = 255;
             }
+            
+            ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
             ctx.fillRect(px, py, cellSize, cellSize);
             
             // Thunderstorm Overlay
