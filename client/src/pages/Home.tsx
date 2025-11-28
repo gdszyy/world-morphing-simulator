@@ -306,6 +306,7 @@ export default function Home() {
             // Mantle Energy: Black -> Red -> Yellow
             const intensity = cell.mantleEnergy / 100;
             ctx.fillStyle = `rgb(${intensity * 255}, ${intensity * 100}, 0)`;
+            ctx.fillRect(px, py, cellSize, cellSize);
         } else if (activeLayer === 'climate') {
             // Temperature: Blue (Cold) -> White (Neutral) -> Red (Hot)
             // Range -50 to 50
@@ -319,10 +320,12 @@ export default function Home() {
                 const v = (t - 0.5) * 2;
                 ctx.fillStyle = `rgb(255, ${(1-v)*255}, ${(1-v)*255})`;
             }
+            ctx.fillRect(px, py, cellSize, cellSize);
             
             // Thunderstorm Overlay
             if (cell.hasThunderstorm) {
-                ctx.fillStyle = '#fbbf24'; // Amber
+                ctx.fillStyle = 'rgba(251, 191, 36, 0.5)'; // Amber with opacity
+                ctx.fillRect(px, py, cellSize, cellSize);
             }
         } else if (activeLayer === 'crystal') {
             // Crystal State
@@ -335,7 +338,9 @@ export default function Home() {
             }
             else if (cell.crystalState === 'BETA') ctx.fillStyle = '#64748b'; // Slate
             else ctx.fillStyle = '#404040'; // Empty ground
-               } else {
+            
+            ctx.fillRect(px, py, cellSize, cellSize);
+        } else {
             // Combined View
             // Base: Ground (Dark Grey)
             // Overlay: Transparent Mantle (Red/Yellow)
