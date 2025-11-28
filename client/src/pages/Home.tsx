@@ -656,6 +656,16 @@ export default function Home() {
                 size="icon" className="h-6 w-6 text-xs"
                 onClick={() => setSpeedMultiplier(2)}
             >2x</Button>
+            <Button 
+                variant={speedMultiplier === 5 ? "secondary" : "ghost"} 
+                size="icon" className="h-6 w-6 text-xs"
+                onClick={() => setSpeedMultiplier(5)}
+            >5x</Button>
+            <Button 
+                variant={speedMultiplier === 10 ? "secondary" : "ghost"} 
+                size="icon" className="h-6 w-6 text-xs"
+                onClick={() => setSpeedMultiplier(10)}
+            >10x</Button>
           </div>
 
           <Button 
@@ -686,7 +696,7 @@ export default function Home() {
                     <Input 
                       type="number" 
                       value={mapSize.width} 
-                      onChange={(e) => setMapSize({...mapSize, width: parseInt(e.target.value)})}
+                      onChange={(e) => setMapSize({...mapSize, width: parseInt(e.target.value) || 50})}
                       className="bg-neutral-950 border-neutral-800"
                     />
                   </div>
@@ -695,23 +705,32 @@ export default function Home() {
                     <Input 
                       type="number" 
                       value={mapSize.height} 
-                      onChange={(e) => setMapSize({...mapSize, height: parseInt(e.target.value)})}
+                      onChange={(e) => setMapSize({...mapSize, height: parseInt(e.target.value) || 50})}
                       className="bg-neutral-950 border-neutral-800"
                     />
                   </div>
                 </div>
-                <Button onClick={handleRestart}>确认重启</Button>
+                <div className="text-sm text-neutral-400">
+                  注意：重启将重置所有模拟状态，但保留当前参数设置。
+                </div>
               </div>
+              <Button onClick={() => {
+                setEngine(new SimulationEngine(mapSize.width, mapSize.height, params));
+                setStats({ timeStep: 0, cycle: 0, fps: 0 });
+                setIsRestartOpen(false);
+              }}>
+                确认重启
+              </Button>
             </DialogContent>
           </Dialog>
         </div>
       </header>
-      
-      <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar Controls */}
-        <aside className="w-80 border-r border-neutral-800 bg-neutral-900 flex flex-col shrink-0">
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <aside className="w-80 bg-neutral-900 border-r border-neutral-800 flex flex-col shrink-0 z-20">
           <Tabs defaultValue="layers" className="flex-1 flex flex-col">
-            <TabsList className="w-full bg-neutral-950 rounded-none border-b border-neutral-800 p-0 h-10">
+            <TabsList className="w-full rounded-none border-b border-neutral-800 p-0 h-10">
               <TabsTrigger value="layers" className="flex-1 rounded-none data-[state=active]:bg-neutral-900 data-[state=active]:text-neutral-100 border-b-2 border-transparent data-[state=active]:border-blue-500">图层</TabsTrigger>
               <TabsTrigger value="params" className="flex-1 rounded-none data-[state=active]:bg-neutral-900 data-[state=active]:text-neutral-100 border-b-2 border-transparent data-[state=active]:border-blue-500">参数</TabsTrigger>
               <TabsTrigger value="config" className="flex-1 rounded-none data-[state=active]:bg-neutral-900 data-[state=active]:text-neutral-100 border-b-2 border-transparent data-[state=active]:border-blue-500">配置</TabsTrigger>
@@ -937,12 +956,14 @@ export default function Home() {
           ref={containerRef}
           className={`flex-1 bg-black relative overflow-hidden ${activeTool === 'destroy' ? 'cursor-crosshair' : 'cursor-move'}`}
         >
-          <HumanBehaviorTool 
-            activeTool={activeTool}
-            onToolChange={setActiveTool}
-            brushSize={brushSize}
-            onBrushSizeChange={setBrushSize}
-          />
+          <div className="absolute top-4 right-4 z-10">
+            <HumanBehaviorTool 
+              activeTool={activeTool}
+              onToolChange={setActiveTool}
+              brushSize={brushSize}
+              onBrushSizeChange={setBrushSize}
+            />
+          </div>
           <canvas 
             ref={canvasRef}
             width={canvasSize.width}
