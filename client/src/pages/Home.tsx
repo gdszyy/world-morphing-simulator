@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DEFAULT_PARAMS, SimulationEngine, SimulationParams } from "@/lib/simulation/engine";
 import * as d3 from "d3";
-import { HelpCircle, Pause, Play, RefreshCw, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { FastForward, HelpCircle, Pause, Play, RefreshCw, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 // 参数说明 (汉化)
@@ -43,6 +43,7 @@ export default function Home() {
   const [stats, setStats] = useState({ timeStep: 0, cycle: 0, fps: 0 });
   const [mapSize, setMapSize] = useState({ width: 50, height: 50 });
   const [isRestartOpen, setIsRestartOpen] = useState(false);
+  const [speedMultiplier, setSpeedMultiplier] = useState(1); // 播放速率倍数
   
   // Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -77,7 +78,11 @@ export default function Home() {
   // Simulation Loop
   const animate = (time: number) => {
     if (isPlaying) {
-      engine.update();
+      // 根据倍速执行多次更新
+      for (let i = 0; i < speedMultiplier; i++) {
+        engine.update();
+      }
+      
       setStats({
         timeStep: engine.timeStep,
         cycle: engine.cycleCount,
@@ -96,7 +101,7 @@ export default function Home() {
   useEffect(() => {
     requestRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(requestRef.current);
-  }, [isPlaying, engine, activeLayer]); // Dependencies for loop
+  }, [isPlaying, engine, activeLayer, speedMultiplier]); // Dependencies for loop
   
   // Update Params
   useEffect(() => {
@@ -165,7 +170,13 @@ export default function Home() {
             }
         } else if (activeLayer === 'crystal') {
             // Crystal State
-            if (cell.crystalState === 'ALPHA') ctx.fillStyle = '#10b981'; // Emerald
+            if (cell.crystalState === 'ALPHA') {
+                ctx.fillStyle = '#10b981'; // Emerald
+                // 能量吸收视觉效果：更亮的中心
+                if (cell.isAbsorbing) {
+                    ctx.fillStyle = '#34d399'; // Lighter Emerald
+                }
+            }
             else if (cell.crystalState === 'BETA') ctx.fillStyle = '#64748b'; // Slate
             else ctx.fillStyle = '#404040'; // Empty ground
         } else {
@@ -178,7 +189,15 @@ export default function Home() {
             const groundIntensity = 30 + (cell.mantleEnergy / 100) * 30;
             ctx.fillStyle = `rgb(${groundIntensity}, ${groundIntensity}, ${groundIntensity})`;
             
-            if (cell.crystalState === 'ALPHA') ctx.fillStyle = '#10b981';
+            if (cell.crystalState === 'ALPHA') {
+                ctx.fillStyle = '#10b981';
+                // 能量吸收视觉效果：白色边框
+                if (cell.isAbsorbing) {
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(px + 1, py + 1, cellSize - 2, cellSize - 2);
+                }
+            }
             else if (cell.crystalState === 'BETA') ctx.fillStyle = '#64748b';
             
             if (cell.hasThunderstorm) {
@@ -248,6 +267,31 @@ export default function Home() {
         </div>
         
         <div className="flex items-center gap-2">
+          {/* 播放速率控制 */}
+          <div className="flex items-center gap-1 mr-2 bg-neutral-800 rounded px-2 py-1">
+            <span className="text-xs text-neutral-400">速率:</span>
+            <Button 
+                variant={speedMultiplier === 1 ? "secondary" : "ghost"} 
+                size="icon" className="h-6 w-6 text-xs"
+                onClick={() => setSpeedMultiplier(1)}
+            >1x</Button>
+            <Button 
+                variant={speedMultiplier === 5 ? "secondary" : "ghost"} 
+                size="icon" className="h-6 w-6 text-xs"
+                onClick={() => setSpeedMultiplier(5)}
+            >5x</Button>
+            <Button 
+                variant={speedMultiplier === 10 ? "secondary" : "ghost"} 
+                size="icon" className="h-6 w-6 text-xs"
+                onClick={() => setSpeedMultiplier(10)}
+            >10x</Button>
+            <Button 
+                variant={speedMultiplier === 50 ? "secondary" : "ghost"} 
+                size="icon" className="h-6 w-6 text-xs"
+                onClick={() => setSpeedMultiplier(50)}
+            ><FastForward className="w-3 h-3" /></Button>
+          </div>
+
           <Button 
             variant={isPlaying ? "secondary" : "default"} 
             size="sm" 
@@ -348,6 +392,7 @@ export default function Home() {
                     <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500"></div> Alpha 晶石</div>
                     <div className="flex items-center gap-2"><div className="w-3 h-3 bg-slate-500"></div> Beta 晶石</div>
                     <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-500/50"></div> 雷暴区域</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 border border-white/50"></div> 正在吸收能量</div>
                   </>
                 )}
                 {activeLayer === 'mantle' && (
@@ -378,6 +423,8 @@ export default function Home() {
               <div className="space-y-3">
                 <Label className="text-xs uppercase text-red-500 font-bold">地幔层参数</Label>
                 <ParamControl label="能量等级" paramKey="mantleEnergyLevel" min={0.5} max={3.0} step={0.1} />
+                <ParamControl label="扩张阈值" paramKey="expansionThreshold" min={50} max={200} step={10} />
+                <ParamControl label="缩减阈值" paramKey="shrinkThreshold" min={50} max={200} step={10} />
                 <ParamControl label="最大半径" paramKey="maxRadius" min={10} max={40} step={1} />
                 <ParamControl label="最小半径" paramKey="minRadius" min={0} max={20} step={1} />
                 <ParamControl label="扭曲速度" paramKey="distortionSpeed" min={0} max={0.05} step={0.001} />

@@ -23,13 +23,14 @@ export interface Cell {
   // 晶石层
   crystalState: CellType;
   crystalEnergy: number; // 用于可视化
+  isAbsorbing: boolean; // 新增：是否正在吸收能量（用于视觉效果）
 }
 
 export interface SimulationParams {
   // 地幔层参数
   mantleTimeScale: number;
   expansionThreshold: number; // 地形扩张阈值
-  shrinkThreshold: number;
+  shrinkThreshold: number; // 地形缩减阈值
   mantleEnergyLevel: number; // 地幔能量等级 (倍率)
   maxRadius: number; // 最大半径限制 (硬限制)
   minRadius: number; // 最小半径限制 (硬限制)
@@ -133,6 +134,7 @@ export class SimulationEngine {
           hasThunderstorm: false,
           crystalState,
           crystalEnergy: 0,
+          isAbsorbing: false,
         });
       }
       grid.push(row);
@@ -322,6 +324,9 @@ export class SimulationEngine {
         const cell = this.grid[y][x];
         if (!cell.exists) continue;
         
+        // 重置吸收状态
+        cell.isAbsorbing = false;
+        
         // 能量输入
         let energyInput = 0;
         if (cell.crystalState === 'ALPHA') {
@@ -330,7 +335,10 @@ export class SimulationEngine {
             energyInput += absorbed;
             
             // 消耗地幔能量 (直接修改当前状态)
-            cell.mantleEnergy = Math.max(0, cell.mantleEnergy - absorbed);
+            if (absorbed > 0.1) {
+                cell.mantleEnergy = Math.max(0, cell.mantleEnergy - absorbed);
+                cell.isAbsorbing = true; // 标记为正在吸收
+            }
             
             if (cell.hasThunderstorm) energyInput += thunderstormEnergy;
         }
