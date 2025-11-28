@@ -191,9 +191,12 @@ export class SimulationEngine {
     this.cycleCount = 0;
     this.noiseOffsetX = Math.random() * 1000;
     this.noiseOffsetY = Math.random() * 1000;
-    this.edgeSupplyPoints = Array(params.edgeSupplyPointCount || 3).fill(0).map(() => ({
-      angle: Math.random() * Math.PI * 2,
-      speed: (Math.random() - 0.5) * (params.edgeSupplyPointSpeed || 0.05)
+    // 均匀分布供给点
+    const count = params.edgeSupplyPointCount || 3;
+    const baseSpeed = params.edgeSupplyPointSpeed || 0.05;
+    this.edgeSupplyPoints = Array(count).fill(0).map((_, i) => ({
+      angle: (i / count) * Math.PI * 2, // 均匀分布角度
+      speed: baseSpeed // 统一旋转速度，确保整体旋转
     }));
     this.grid = this.initializeGrid();
   }
@@ -268,7 +271,10 @@ export class SimulationEngine {
     this.noiseOffsetY += distortionSpeed;
     
     // 更新供给点位置
+    const supplySpeed = this.params.edgeSupplyPointSpeed || 0.05;
     for (const point of this.edgeSupplyPoints) {
+        // 使用参数中的速度，确保实时更新生效
+        point.speed = supplySpeed;
         point.angle += point.speed;
         if (point.angle > Math.PI * 2) point.angle -= Math.PI * 2;
         if (point.angle < 0) point.angle += Math.PI * 2;
