@@ -103,7 +103,7 @@ export const DEFAULT_PARAMS: SimulationParams = {
   thunderstormEnergy: 10.0, // Will be updated later if needed, currently 10 in default
   expansionCost: 8,
   maxCrystalEnergy: 80,
-  energySharingRate: 0.1,
+  energySharingRate: 1.2,
   energySharingLimit: 1.2, // 新增参数：能量共享上限
   harvestThreshold: 0.8,
 

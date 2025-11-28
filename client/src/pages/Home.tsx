@@ -752,7 +752,7 @@ export default function Home() {
                 <ParamControl label="扩张消耗" paramKey="expansionCost" min={1} max={20} step={0.5} />
                   <ParamControl label="能量上限" paramKey="maxCrystalEnergy" min={10} max={200} step={5} />
                   <ParamControl label="雷暴能量" paramKey="thunderstormEnergy" min={0} max={50} step={1} />
-                  <ParamControl label="能量共享率" paramKey="energySharingRate" min={0} max={0.5} step={0.01} />
+                  <ParamControl label="能量共享率" paramKey="energySharingRate" min={0} max={2.0} step={0.01} />
               </div>
 
               {/* 人类层参数 */}
