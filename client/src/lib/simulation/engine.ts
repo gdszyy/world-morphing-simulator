@@ -891,10 +891,23 @@ export class SimulationEngine {
         }
     }
 
-    if (targetX !== -1 && this.grid[targetY][targetX].crystalState === 'EMPTY') {
+    // 如果有指定生成点，强制生成（覆盖原有物体）
+    // 如果是随机寻找的点，则必须是EMPTY
+    let canSpawn = false;
+    if (humanSpawnPoint && targetX === humanSpawnPoint.x && targetY === humanSpawnPoint.y) {
+        canSpawn = true;
+    } else if (targetX !== -1 && this.grid[targetY][targetX].crystalState === 'EMPTY') {
+        canSpawn = true;
+    }
+
+    if (canSpawn && targetX !== -1) {
         const cell = this.grid[targetY][targetX];
+        // 强制覆盖：清除原有状态
         cell.crystalState = 'BIO';
         cell.prosperity = prosperity;
+        cell.storedEnergy = 0; // 清除可能存在的晶石能量
+        cell.isMining = false;
+        
         // 初始生物为人类
         cell.bioAttributes = {
             minTemp: this.params.humanMinTemp,
