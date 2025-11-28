@@ -295,7 +295,14 @@ export class SimulationEngine {
         let newEnergy = cell.mantleEnergy * (1 - mantleTimeScale) + targetEnergy * mantleTimeScale;
         
         // 扩散混合
-        newEnergy = newEnergy * 0.9 + avgEnergy * 0.1;
+        if (!isNaN(avgEnergy)) {
+            newEnergy = newEnergy * 0.9 + avgEnergy * 0.1;
+        }
+        
+        // 防止 NaN 或 无限值
+        if (isNaN(newEnergy) || !isFinite(newEnergy)) {
+            newEnergy = mantleEnergyLevel;
+        }
         
         // 4. 边缘能量生成
         // 计算到中心的距离
@@ -366,13 +373,25 @@ export class SimulationEngine {
         
         if (cell.exists) {
             // 检查缩减
-            if (cell.mantleEnergy < shrinkThreshold && dist > minRadius) {
-                cell.shrinkAccumulator += (shrinkThreshold - cell.mantleEnergy);
-                if (cell.shrinkAccumulator > 100) {
-                    terrainChanges.push({x, y, action: 'shrink'});
+            // 只有当距离大于最小半径时才允许缩减
+            if (dist > minRadius) {
+                if (cell.mantleEnergy < shrinkThreshold) {
+                    cell.shrinkAccumulator += (shrinkThreshold - cell.mantleEnergy);
+                    // 增加缩减难度，避免连锁反应
+                    if (cell.shrinkAccumulator > 200) {
+                        terrainChanges.push({x, y, action: 'shrink'});
+                        // 重置累加器，防止连续帧重复触发
+                        cell.shrinkAccumulator = 0;
+                    }
+                } else {
+                    cell.shrinkAccumulator = Math.max(0, cell.shrinkAccumulator - 2);
                 }
             } else {
-                cell.shrinkAccumulator = Math.max(0, cell.shrinkAccumulator - 1);
+                // 最小半径内强制存在
+                if (!cell.exists) {
+                    terrainChanges.push({x, y, action: 'expand'});
+                }
+                cell.shrinkAccumulator = 0;
             }
             
             // 检查扩张
