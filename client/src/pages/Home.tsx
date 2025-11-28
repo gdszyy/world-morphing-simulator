@@ -382,6 +382,27 @@ export default function Home() {
       }
     }
 
+    // Render Spawn Point
+    if ((activeLayer === 'human' || activeLayer === 'combined') && engine.params.humanSpawnPoint) {
+        const { x, y } = engine.params.humanSpawnPoint;
+        const px = x * cellSize;
+        const py = y * cellSize;
+        
+        // Draw spawn point marker (Star or Crosshair)
+        ctx.strokeStyle = '#f97316'; // Orange-500
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(px + cellSize, py + cellSize);
+        ctx.moveTo(px + cellSize, py);
+        ctx.lineTo(px, py + cellSize);
+        ctx.stroke();
+        
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(px - 2, py - 2, cellSize + 4, cellSize + 4);
+    }
+
     // Draw Energy Flow (Overlay on Crystal or Combined layer)
     if (activeLayer === 'crystal' || activeLayer === 'combined') {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';

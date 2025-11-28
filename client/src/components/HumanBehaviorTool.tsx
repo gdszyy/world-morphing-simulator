@@ -2,10 +2,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Eraser, MousePointer2 } from "lucide-react";
+import { Eraser, MousePointer2, MapPin } from "lucide-react";
 import { useState } from "react";
 
-export type ToolType = 'none' | 'destroy';
+export type ToolType = 'none' | 'destroy' | 'spawn';
 
 interface HumanBehaviorToolProps {
   activeTool: ToolType;
@@ -47,6 +47,15 @@ export default function HumanBehaviorTool({
             <Eraser className="w-4 h-4 mr-2" />
             摧毁
           </Button>
+          <Button
+            variant={activeTool === 'spawn' ? "default" : "outline"}
+            size="sm"
+            onClick={() => onToolChange('spawn')}
+            className="w-full col-span-2 bg-orange-600 hover:bg-orange-700 text-white border-orange-800"
+          >
+            <MapPin className="w-4 h-4 mr-2" />
+            设置重生点
+          </Button>
         </div>
 
         {activeTool === 'destroy' && (
@@ -67,7 +76,9 @@ export default function HumanBehaviorTool({
         )}
         
         <div className="text-xs text-neutral-500">
-          {activeTool === 'destroy' ? "点击晶石区域可按画笔范围摧毁晶石" : "仅观察模式，无法修改世界"}
+          {activeTool === 'destroy' && "点击晶石区域可按画笔范围摧毁晶石"}
+          {activeTool === 'spawn' && "点击地图任意位置设置人类重生点"}
+          {activeTool === 'none' && "仅观察模式，无法修改世界"}
         </div>
       </div>
     </Card>

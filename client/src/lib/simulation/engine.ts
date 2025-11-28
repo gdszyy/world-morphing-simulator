@@ -60,6 +60,7 @@ export interface SimulationParams {
   expansionCost: number; // 扩张所需能量
   maxCrystalEnergy: number; // 晶石能量上限
   energySharingRate: number; // 能量共享率
+  energySharingLimit: number; // 能量共享上限 (倍率)
   harvestThreshold: number;
 
   // 人类层参数
@@ -78,14 +79,14 @@ export const DEFAULT_PARAMS: SimulationParams = {
   // 地幔层
   mantleTimeScale: 0.002, // Not in screenshot, keeping default
   expansionThreshold: 123,
-  shrinkThreshold: 20,
+  shrinkThreshold: 2,
   mantleEnergyLevel: 100,
   maxRadius: 25,
   minRadius: 5,
   distortionSpeed: 0.01,
   edgeGenerationWidth: 2,
-  edgeGenerationEnergy: 10,
-  edgeGenerationOffset: 0,
+  edgeGenerationEnergy: 4,
+  edgeGenerationOffset: 1,
   edgeSupplyPointCount: 3,
   edgeSupplyPointSpeed: 0.05,
   
@@ -103,6 +104,7 @@ export const DEFAULT_PARAMS: SimulationParams = {
   expansionCost: 8,
   maxCrystalEnergy: 80,
   energySharingRate: 0.1,
+  energySharingLimit: 1.2, // 新增参数：能量共享上限
   harvestThreshold: 0.8,
 
   // 人类层
@@ -717,19 +719,20 @@ export class SimulationEngine {
         for (const neighbor of neighbors) {
             const diff = neighbor.storedEnergy - cell.storedEnergy;
             // 能量从高流向低
-            // 注意：这里我们只计算流入流出，为了避免重复计算，我们只处理 diff > 0 的情况 (neighbor -> cell)
-            // 或者简单地，每个 cell 计算与所有 neighbor 的交换，最终除以 2 (因为双向计算)
-            // 但为了流向记录，我们需要明确方向
             
             if (diff > 0) {
                 const flow = diff * (energySharingRate || 0.1);
+                
+                // 检查接收方是否超过共享上限
+                const limit = maxCrystalEnergy * (this.params.energySharingLimit || 1.2);
+                if (cell.storedEnergy + flow > limit) {
+                    continue; // 超过上限不接收
+                }
+
                 energyChanges[y][x] += flow;
                 energyChanges[neighbor.y][neighbor.x] -= flow;
                 
                 // 记录流向: neighbor -> cell
-                // 我们在 neighbor 上记录流出到 cell
-                // 或者在 cell 上记录从 neighbor 流入
-                // 为了可视化连线，我们在源头记录目标
                 neighbor.energyFlow.push({ x: cell.x, y: cell.y, amount: flow });
             }
         }
