@@ -503,6 +503,39 @@ export class SimulationEngine {
         cell.storedEnergy = Math.min(cell.storedEnergy, maxCrystalEnergy);
       }
     }
+
+    // 1.5 能量共享 (Energy Sharing)
+    // 连通的 ALPHA 晶石可以共享能量，使得能量分布更均匀，防止局部枯竭
+    // 简单实现：每个晶石与周围的 ALPHA 邻居交换能量
+    const energySharingRate = 0.1; // 每次迭代共享 10% 的能量差
+    const energyChanges = Array(this.height).fill(0).map(() => Array(this.width).fill(0));
+
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const cell = this.grid[y][x];
+        if (!cell.exists || cell.crystalState !== 'ALPHA') continue;
+
+        const neighbors = this.getNeighbors(x, y).filter(n => n.exists && n.crystalState === 'ALPHA');
+        for (const neighbor of neighbors) {
+            const diff = neighbor.storedEnergy - cell.storedEnergy;
+            // 能量从高流向低
+            const flow = diff * energySharingRate;
+            energyChanges[y][x] += flow;
+        }
+      }
+    }
+
+    // 应用能量共享
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const cell = this.grid[y][x];
+        if (!cell.exists || cell.crystalState !== 'ALPHA') continue;
+        
+        cell.storedEnergy += energyChanges[y][x];
+        // 再次确保不超限
+        cell.storedEnergy = Math.max(0, Math.min(cell.storedEnergy, maxCrystalEnergy));
+      }
+    }
     
     // 2. 状态转移 (基于 grid 计算 nextStates)
     const nextStates: CellType[][] = this.grid.map(row => row.map(c => c.crystalState));
