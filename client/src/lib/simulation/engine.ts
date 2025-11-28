@@ -88,6 +88,7 @@ export interface SimulationParams {
   mutationRate: number; // 变异概率
   mutationStrength: number; // 变异强度 (0-1)
   newSpeciesThreshold: number; // 成为新物种的变异阈值 (0.2)
+  minProsperityGrowth: number; // 非人类生物的最小繁荣度增长值
   
   // 人类初始参数 (作为默认生物模板)
   humanMinTemp: number;
@@ -143,6 +144,7 @@ export const DEFAULT_PARAMS: SimulationParams = {
   mutationRate: 0.1,
   mutationStrength: 0.1,
   newSpeciesThreshold: 0.2,
+  minProsperityGrowth: 5,
 
   // 人类层 (默认生物)
   humanMinTemp: 7,
@@ -475,10 +477,8 @@ export class SimulationEngine {
             if (cell.crystalState === 'ALPHA') {
                 cell.crystalState = 'BETA';
                 cell.storedEnergy = 0;
-            } else {
-                cell.crystalState = 'EMPTY';
-                cell.storedEnergy = 0;
-            }
+            } 
+            // Beta 晶石不会因为能量耗尽而消失，只能被生物开采
         }
       }
     }
@@ -648,7 +648,12 @@ export class SimulationEngine {
             // B. 繁荣度更新
             let prosperityChange = 0;
             if (cell.temperature >= attrs.minTemp && cell.temperature <= attrs.maxTemp) {
-                prosperityChange += attrs.prosperityGrowth;
+                let growth = attrs.prosperityGrowth;
+                // 规则：非人类生物(ID!=0)的繁荣度增长必须 >= minProsperityGrowth
+                if (attrs.speciesId !== 0) {
+                    growth = Math.max(growth, this.params.minProsperityGrowth);
+                }
+                prosperityChange += growth;
             } else {
                 prosperityChange -= attrs.prosperityDecay;
             }

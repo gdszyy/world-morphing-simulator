@@ -65,6 +65,7 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   mutationRate: { desc: "变异概率", impact: "新生物产生变异的可能性" },
   mutationStrength: { desc: "变异强度", impact: "变异时属性变化的幅度" },
   newSpeciesThreshold: { desc: "新物种阈值", impact: "属性变化超过此比例时判定为新物种" },
+  minProsperityGrowth: { desc: "非人类生物最小增长", impact: "确保随机生成的生物具有最低生存能力" },
 };
 
 export default function Home() {
@@ -917,6 +918,7 @@ export default function Home() {
                   <ParamControl label="变异概率" paramKey="mutationRate" min={0} max={1} step={0.01} />
                   <ParamControl label="变异强度" paramKey="mutationStrength" min={0} max={1} step={0.01} />
                   <ParamControl label="新物种阈值" paramKey="newSpeciesThreshold" min={0} max={1} step={0.05} />
+                  <ParamControl label="最小增长" paramKey="minProsperityGrowth" min={0} max={20} step={0.5} />
                 </div>
             </TabsContent>
           </Tabs>
