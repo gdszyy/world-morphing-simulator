@@ -315,8 +315,8 @@ export class SimulationEngine {
             }
         }
         
-        // 5. 晶石吸收
-        if (cell.crystalState !== 'EMPTY') {
+        // 5. 晶石吸收 (仅Alpha晶石吸收地幔能量)
+        if (cell.crystalState === 'ALPHA') {
             const absorption = newEnergy * this.params.mantleAbsorption;
             newEnergy -= absorption;
         }

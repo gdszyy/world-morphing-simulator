@@ -906,7 +906,7 @@ export default function Home() {
               {/* 气候层参数 */}
               <div className="space-y-3">
                 <Label className="text-xs uppercase text-blue-500 font-bold">气候层参数</Label>
-                <ParamControl label="扩散速度" paramKey="diffusionRate" min={0} max={0.2} step={0.01} />
+                <ParamControl label="扩散速度" paramKey="diffusionRate" min={0} max={1.0} step={0.01} />
                 <ParamControl label="雷暴阈值" paramKey="thunderstormThreshold" min={1} max={100} step={1} />
               </div>
               
