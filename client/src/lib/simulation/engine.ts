@@ -25,6 +25,7 @@ export interface Cell {
   crystalEnergy: number; // 当前帧获得的能量 (用于可视化)
   storedEnergy: number; // 累积能量 (用于扩张)
   isAbsorbing: boolean; // 是否正在吸收能量
+  energyFlow: { x: number, y: number, amount: number }[]; // 能量流向记录 (目标x, 目标y, 数量)
 }
 
 export interface SimulationParams {
@@ -55,6 +56,7 @@ export interface SimulationParams {
   thunderstormEnergy: number;
   expansionCost: number; // 扩张所需能量
   maxCrystalEnergy: number; // 晶石能量上限
+  energySharingRate: number; // 能量共享率
   harvestThreshold: number;
 }
 
@@ -86,6 +88,7 @@ export const DEFAULT_PARAMS: SimulationParams = {
   thunderstormEnergy: 10.0, // Will be updated later if needed, currently 10 in default
   expansionCost: 8,
   maxCrystalEnergy: 80,
+  energySharingRate: 0.1,
   harvestThreshold: 0.8,
 };
 
@@ -149,6 +152,7 @@ export class SimulationEngine {
           crystalEnergy: 0,
           storedEnergy: 10.0, // 初始能量
           isAbsorbing: false,
+          energyFlow: [],
         });
       }
       grid.push(row);
@@ -507,8 +511,15 @@ export class SimulationEngine {
     // 1.5 能量共享 (Energy Sharing)
     // 连通的 ALPHA 晶石可以共享能量，使得能量分布更均匀，防止局部枯竭
     // 简单实现：每个晶石与周围的 ALPHA 邻居交换能量
-    const energySharingRate = 0.1; // 每次迭代共享 10% 的能量差
+    const { energySharingRate } = this.params;
     const energyChanges = Array(this.height).fill(0).map(() => Array(this.width).fill(0));
+
+    // 清空上一帧的能量流记录
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        if (this.grid[y][x]) this.grid[y][x].energyFlow = [];
+      }
+    }
 
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
@@ -519,8 +530,21 @@ export class SimulationEngine {
         for (const neighbor of neighbors) {
             const diff = neighbor.storedEnergy - cell.storedEnergy;
             // 能量从高流向低
-            const flow = diff * energySharingRate;
-            energyChanges[y][x] += flow;
+            // 注意：这里我们只计算流入流出，为了避免重复计算，我们只处理 diff > 0 的情况 (neighbor -> cell)
+            // 或者简单地，每个 cell 计算与所有 neighbor 的交换，最终除以 2 (因为双向计算)
+            // 但为了流向记录，我们需要明确方向
+            
+            if (diff > 0) {
+                const flow = diff * (energySharingRate || 0.1);
+                energyChanges[y][x] += flow;
+                energyChanges[neighbor.y][neighbor.x] -= flow;
+                
+                // 记录流向: neighbor -> cell
+                // 我们在 neighbor 上记录流出到 cell
+                // 或者在 cell 上记录从 neighbor 流入
+                // 为了可视化连线，我们在源头记录目标
+                neighbor.energyFlow.push({ x: cell.x, y: cell.y, amount: flow });
+            }
         }
       }
     }

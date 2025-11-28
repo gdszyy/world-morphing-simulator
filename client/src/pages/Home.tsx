@@ -34,6 +34,7 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   thunderstormEnergy: { desc: "雷暴提供的额外能量", impact: "高: 雷暴促进生长 / 低: 雷暴影响小" },
   expansionCost: { desc: "扩张到新地块所需的能量", impact: "高: 扩张慢 / 低: 扩张快" },
   maxCrystalEnergy: { desc: "晶石可存储的最大能量", impact: "高: 生存力强 / 低: 容易硬化" },
+  energySharingRate: { desc: "晶石间能量共享的比例", impact: "高: 能量分布均匀 / 低: 能量分布不均" },
   harvestThreshold: { desc: "采集阈值 (自动模拟中未使用)", impact: "N/A" },
   edgeGenerationWidth: { desc: "边缘能量生成的宽度范围（格数）", impact: "高：边缘生成范围更广 / 低：仅在紧邻边缘处生成" },
   edgeGenerationEnergy: { desc: "边缘每格每次迭代生成的能量值", impact: "高：边缘快速扩张 / 低：边缘扩张缓慢" },
@@ -380,6 +381,35 @@ export default function Home() {
         }
       }
     }
+
+    // Draw Energy Flow (Overlay on Crystal or Combined layer)
+    if (activeLayer === 'crystal' || activeLayer === 'combined') {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        
+        for (let y = 0; y < engine.height; y++) {
+            for (let x = 0; x < engine.width; x++) {
+                const cell = engine.grid[y][x];
+                if (!cell.exists || !cell.energyFlow || cell.energyFlow.length === 0) continue;
+                
+                const startX = x * cellSize + cellSize / 2;
+                const startY = y * cellSize + cellSize / 2;
+                
+                for (const flow of cell.energyFlow) {
+                    // 只绘制显著的能量流
+                    if (flow.amount < 0.05) continue;
+                    
+                    const endX = flow.x * cellSize + cellSize / 2;
+                    const endY = flow.y * cellSize + cellSize / 2;
+                    
+                    ctx.moveTo(startX, startY);
+                    ctx.lineTo(endX, endY);
+                }
+            }
+        }
+        ctx.stroke();
+    }
     
     ctx.restore();
   };
@@ -645,13 +675,14 @@ export default function Home() {
               {/* 晶石层参数 */}
               <div className="space-y-3">
                 <Label className="text-xs uppercase text-emerald-500 font-bold">晶石层参数</Label>
-                <ParamControl label="Alpha生存需求" paramKey="alphaEnergyDemand" min={1} max={10} step={0.5} />
-                <ParamControl label="扩张消耗" paramKey="expansionCost" min={5} max={50} step={1} />
-                <ParamControl label="能量上限" paramKey="maxCrystalEnergy" min={10} max={100} step={5} />
-                <ParamControl label="雷暴能量" paramKey="thunderstormEnergy" min={0} max={50} step={1} />
-              </div>
-            </TabsContent>
-          </Tabs>
+                <ParamControl label="Alpha生存需求" paramKey="alphaEnergyDemand" min={1} max={10} step={0.1} />
+                <ParamControl label="扩张消耗" paramKey="expansionCost" min={1} max={20} step={0.5} />
+                  <ParamControl label="能量上限" paramKey="maxCrystalEnergy" min={10} max={200} step={5} />
+                  <ParamControl label="雷暴能量" paramKey="thunderstormEnergy" min={0} max={50} step={1} />
+                  <ParamControl label="能量共享率" paramKey="energySharingRate" min={0} max={0.5} step={0.01} />
+                </div>
+              </TabsContent>
+            </Tabs>
         </aside>
         
         {/* Main Canvas Area */}
