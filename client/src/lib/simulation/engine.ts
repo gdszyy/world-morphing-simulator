@@ -76,12 +76,14 @@ export interface SimulationParams {
   humanExpansionThreshold: number; // 扩张所需的繁荣度阈值
   humanMiningReward: number; // 消除Beta晶石获得的繁荣度
   humanMigrationThreshold: number; // 低于此繁荣度开始迁移
+  humanDeathThreshold: number; // 繁荣度低于此值时消灭聚落
   alphaRadiationDamage: number; // Alpha晶石辐射伤害 (每帧减少繁荣度)
+  humanSpawnPoint?: {x: number, y: number}; // 人类重生点
 }
 
 export const DEFAULT_PARAMS: SimulationParams = {
   // 地幔层
-  mantleTimeScale: 0.002, // Not in screenshot, keeping default
+  mantleTimeScale: 0.002,
   expansionThreshold: 123,
   shrinkThreshold: 2,
   mantleEnergyLevel: 100,
@@ -93,37 +95,38 @@ export const DEFAULT_PARAMS: SimulationParams = {
   edgeGenerationOffset: 1,
   edgeSupplyPointCount: 3,
   edgeSupplyPointSpeed: 0.05,
-  mantleHeatFactor: 0.1, // 默认值
+  mantleHeatFactor: 0.1,
   
   // 气候层
   diffusionRate: 0.12,
-  advectionRate: 0.02, // Not in screenshot, keeping default
+  advectionRate: 0.02,
   thunderstormThreshold: 18,
-  seasonalAmplitude: 5.0, // Not in screenshot, keeping default
+  seasonalAmplitude: 5.0,
   
   // 晶石层
   alphaEnergyDemand: 1.5,
-  betaEnergyDemand: 2.0, // Not in screenshot, keeping default
-  mantleAbsorption: 0.1, // Not in screenshot, keeping default
-  thunderstormEnergy: 10.0, // Will be updated later if needed, currently 10 in default
+  betaEnergyDemand: 2.0,
+  mantleAbsorption: 0.1,
+  thunderstormEnergy: 10.0,
   expansionCost: 8,
   maxCrystalEnergy: 80,
   energySharingRate: 1.2,
-  energySharingLimit: 1.2, // 新增参数：能量共享上限
-  energyDecayRate: 0.05, // 新增参数：能量传输衰减率 (每格)
+  energySharingLimit: 1.2,
+  energyDecayRate: 0.05,
   harvestThreshold: 0.8,
 
   // 人类层
-  humanMinTemp: 15, // 舒适温度下限 (真实数据参考)
-  humanMaxTemp: 25, // 舒适温度上限 (真实数据参考)
-  humanSurvivalMinTemp: -50, // 生存极限低温
-  humanSurvivalMaxTemp: 50, // 生存极限高温
+  humanMinTemp: 15,
+  humanMaxTemp: 25,
+  humanSurvivalMinTemp: -50,
+  humanSurvivalMaxTemp: 50,
   humanProsperityGrowth: 0.5,
   humanProsperityDecay: 1.0,
   humanExpansionThreshold: 80,
   humanMiningReward: 20,
   humanMigrationThreshold: 40,
-  alphaRadiationDamage: 2.0, // 默认辐射伤害
+  humanDeathThreshold: 10,
+  alphaRadiationDamage: 2.0,
 };
 
 export class SimulationEngine {
@@ -137,6 +140,10 @@ export class SimulationEngine {
   noiseOffsetX: number;
   noiseOffsetY: number;
   edgeSupplyPoints: { angle: number, speed: number }[];
+  
+  // 人类重生控制
+  humanExtinctionStep: number | null = null; // 记录人类灭绝的时间步
+  isFirstSpawn: boolean = true; // 是否是第一次生成
   
   constructor(width: number, height: number, params: SimulationParams = DEFAULT_PARAMS) {
     this.width = width;
@@ -184,10 +191,11 @@ export class SimulationEngine {
           hasThunderstorm: false,
           crystalState,
           crystalEnergy: 0,
-          storedEnergy: 10.0, // 初始能量
+          storedEnergy: 10.0,
           isAbsorbing: false,
           energyFlow: [],
           prosperity: 0,
+          isMining: false,
         });
       }
       grid.push(row);
@@ -207,19 +215,14 @@ export class SimulationEngine {
     this.updateHumanLayer();
   }
 
-  // initializeGrid 已经在前面定义过了，这里不需要重复定义
-  // 我们将人类初始化的逻辑整合到 updateHumanLayer 中，或者在构造函数中调用一个单独的初始化方法
-  // 但为了保持代码结构清晰，我们删除这里重复且错误的 initializeGrid 定义
-  // updateHumanLayer 已经包含了初始化逻辑 (如果人类数量为0则生成)
-  
   updateHumanLayer() {
     const {
         humanMinTemp, humanMaxTemp, humanSurvivalMinTemp, humanSurvivalMaxTemp,
         humanProsperityGrowth, humanProsperityDecay, humanExpansionThreshold,
-        humanMiningReward, humanMigrationThreshold
+        humanMiningReward, humanMigrationThreshold, humanDeathThreshold
     } = this.params;
 
-    // 1. 检查是否需要初始化人类 (如果没有人类存在)
+    // 1. 检查人类数量
     let humanCount = 0;
     for (let y = 0; y < this.height; y++) {
         for (let x = 0; x < this.width; x++) {
@@ -229,28 +232,38 @@ export class SimulationEngine {
         }
     }
 
+    // 2. 处理人类生成/重生逻辑
     if (humanCount === 0) {
-        // 随机生成一个人类聚落
-        let attempts = 0;
-        while (attempts < 100) {
-            const rx = Math.floor(Math.random() * this.width);
-            const ry = Math.floor(Math.random() * this.height);
-            const cell = this.grid[ry][rx];
-            // 优先选择温度适宜的地方
-            const isTempSuitable = cell.temperature >= humanMinTemp && cell.temperature <= humanMaxTemp;
-            
-            if (cell.exists && cell.crystalState !== 'ALPHA' && (isTempSuitable || attempts > 50)) {
-                cell.crystalState = 'HUMAN';
-                cell.prosperity = 50;
-                break;
+        // 如果是第一次运行，且步数达到50，生成初始人类
+        if (this.isFirstSpawn) {
+            if (this.timeStep >= 50) {
+                this.spawnHuman(100); // 初始生成繁荣度为100
+                this.isFirstSpawn = false;
             }
-            attempts++;
+        } 
+        // 如果不是第一次（灭绝后重生），记录灭绝时间
+        else {
+            if (this.humanExtinctionStep === null) {
+                this.humanExtinctionStep = this.timeStep;
+            }
+            
+            // 灭绝后经过20个迭代重生
+            if (this.timeStep - this.humanExtinctionStep >= 20) {
+                this.spawnHuman(100); // 重生繁荣度为100
+                this.humanExtinctionStep = null;
+            }
         }
-        return; //这一帧只做初始化
+        
+        // 如果本帧进行了生成（或等待生成），则不进行后续更新
+        if (humanCount === 0) return; 
+    } else {
+        // 如果有人类存在，重置灭绝计时器
+        this.humanExtinctionStep = null;
+        // 确保 isFirstSpawn 被标记为 false (防止手动放置人类后逻辑错误)
+        if (humanCount > 0) this.isFirstSpawn = false;
     }
 
-    // 2. 更新人类状态
-    // 使用临时网格记录变更，避免顺序依赖
+    // 3. 更新人类状态
     const changes: {x: number, y: number, type: 'PROSPERITY' | 'STATE' | 'MIGRATE' | 'MINING_STATE', value?: number, toX?: number, toY?: number}[] = [];
 
     for (let y = 0; y < this.height; y++) {
@@ -258,10 +271,9 @@ export class SimulationEngine {
             const cell = this.grid[y][x];
             if (cell.crystalState !== 'HUMAN') continue;
 
-            // A. 温度检查
+            // A. 温度检查 (生存极限)
             if (cell.temperature < humanSurvivalMinTemp || cell.temperature > humanSurvivalMaxTemp) {
-                // 极端温度，直接抹杀
-                changes.push({x, y, type: 'STATE', value: 0}); // 0 for EMPTY (or just not HUMAN)
+                changes.push({x, y, type: 'STATE', value: 0}); // 0 for EMPTY
                 continue;
             }
 
@@ -276,7 +288,7 @@ export class SimulationEngine {
             // 邻居加成
             const neighbors = this.getNeighbors(x, y);
             const humanNeighbors = neighbors.filter(n => n.crystalState === 'HUMAN');
-            prosperityChange += humanNeighbors.length * 0.1; // 每个邻居提供少量加成
+            prosperityChange += humanNeighbors.length * 0.1;
 
             // Alpha 辐射伤害
             const alphaNeighbors = neighbors.filter(n => n.crystalState === 'ALPHA');
@@ -288,53 +300,56 @@ export class SimulationEngine {
             const betaNeighbors = neighbors.filter(n => n.crystalState === 'BETA');
             let isMining = false;
             if (betaNeighbors.length > 0) {
-                // 随机选择一个开采
                 const target = betaNeighbors[Math.floor(Math.random() * betaNeighbors.length)];
-                // 记录消除 Beta
                 changes.push({x: target.x, y: target.y, type: 'STATE', value: 0}); // 变为 EMPTY
                 prosperityChange += humanMiningReward;
                 isMining = true;
             }
             
-            // 更新开采状态
             changes.push({x, y, type: 'MINING_STATE', value: isMining ? 1 : 0});
 
             // 应用繁荣度变化
-            changes.push({x, y, type: 'PROSPERITY', value: cell.prosperity + prosperityChange});
+            const newProsperity = cell.prosperity + prosperityChange;
+            changes.push({x, y, type: 'PROSPERITY', value: newProsperity});
 
-            // D. 扩张
-            if (cell.prosperity + prosperityChange > humanExpansionThreshold) {
-                // 尝试扩张到空地或 Beta 格
-                const validTargets = neighbors.filter(n => n.exists && n.crystalState !== 'ALPHA' && n.crystalState !== 'HUMAN');
-                if (validTargets.length > 0) {
-                    const target = validTargets[Math.floor(Math.random() * validTargets.length)];
-                    changes.push({x: target.x, y: target.y, type: 'STATE', value: 1}); // 1 for HUMAN
+            // D. 死亡判定 (繁荣度过低)
+            if (newProsperity < humanDeathThreshold) {
+                changes.push({x, y, type: 'STATE', value: 0}); // 变为 EMPTY
+                continue;
+            }
+
+            // E. 扩张 (繁荣度足够高)
+            if (newProsperity > humanExpansionThreshold) {
+                // 寻找可扩张的空地
+                const emptyNeighbors = neighbors.filter(n => n.exists && n.crystalState === 'EMPTY');
+                if (emptyNeighbors.length > 0) {
+                    // 优先选择温度适宜的
+                    const suitableNeighbors = emptyNeighbors.filter(n => n.temperature >= humanMinTemp && n.temperature <= humanMaxTemp);
+                    const target = suitableNeighbors.length > 0 
+                        ? suitableNeighbors[Math.floor(Math.random() * suitableNeighbors.length)]
+                        : emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
+                    
                     // 扩张消耗繁荣度
-                    changes.push({x, y, type: 'PROSPERITY', value: (cell.prosperity + prosperityChange) * 0.6});
+                    changes.push({x, y, type: 'PROSPERITY', value: newProsperity - 30});
+                    // 新聚落初始繁荣度为30 (默认值)
+                    changes.push({x: target.x, y: target.y, type: 'STATE', value: 1}); // 1 for HUMAN
+                    changes.push({x: target.x, y: target.y, type: 'PROSPERITY', value: 30});
                 }
             }
 
-            // E. 迁移
-            if (cell.prosperity + prosperityChange < humanMigrationThreshold) {
-                // 繁荣度越低，迁移意愿越强 (这里简化为每帧尝试迁移)
-                // 寻找更好的位置：温度更适宜 或 有 Beta 晶石
-                const bestNeighbor = neighbors
-                    .filter(n => n.exists && n.crystalState === 'EMPTY')
-                    .sort((a, b) => {
-                        // 评分标准：温度适宜度 + Beta 邻居数量
-                        const scoreA = (a.temperature >= humanMinTemp && a.temperature <= humanMaxTemp ? 10 : 0) + 
-                                       this.getNeighbors(a.x, a.y).filter(nn => nn.crystalState === 'BETA').length * 5;
-                        const scoreB = (b.temperature >= humanMinTemp && b.temperature <= humanMaxTemp ? 10 : 0) + 
-                                       this.getNeighbors(b.x, b.y).filter(nn => nn.crystalState === 'BETA').length * 5;
-                        return scoreB - scoreA;
-                    })[0];
+            // F. 迁移 (繁荣度较低但不致死，且环境不适宜)
+            if (newProsperity < humanMigrationThreshold && (cell.temperature < humanMinTemp || cell.temperature > humanMaxTemp)) {
+                const emptyNeighbors = neighbors.filter(n => n.exists && n.crystalState === 'EMPTY');
+                // 寻找更好的环境
+                const betterNeighbors = emptyNeighbors.filter(n => {
+                    const tempDiffCurrent = Math.min(Math.abs(cell.temperature - humanMinTemp), Math.abs(cell.temperature - humanMaxTemp));
+                    const tempDiffNew = Math.min(Math.abs(n.temperature - humanMinTemp), Math.abs(n.temperature - humanMaxTemp));
+                    return tempDiffNew < tempDiffCurrent;
+                });
 
-                if (bestNeighbor) {
-                    // 迁移概率与繁荣度成反比 (繁荣度越低越快)
-                    const migrationChance = 1 - (cell.prosperity / humanMigrationThreshold);
-                    if (Math.random() < migrationChance) {
-                        changes.push({x, y, type: 'MIGRATE', toX: bestNeighbor.x, toY: bestNeighbor.y, value: cell.prosperity});
-                    }
+                if (betterNeighbors.length > 0) {
+                    const target = betterNeighbors[Math.floor(Math.random() * betterNeighbors.length)];
+                    changes.push({x, y, type: 'MIGRATE', toX: target.x, toY: target.y, value: newProsperity});
                 }
             }
         }
@@ -342,515 +357,456 @@ export class SimulationEngine {
 
     // 应用变更
     for (const change of changes) {
-        const targetCell = this.grid[change.y][change.x];
-        
-        if (change.type === 'STATE') {
-            if (change.value === 0) { // Become EMPTY
-                if (targetCell.crystalState === 'HUMAN' || targetCell.crystalState === 'BETA') {
-                    targetCell.crystalState = 'EMPTY';
-                    targetCell.prosperity = 0;
-                }
-            } else if (change.value === 1) { // Become HUMAN
-                targetCell.crystalState = 'HUMAN';
-                targetCell.prosperity = 30; // 新扩张的初始繁荣度
-            }
-        } else if (change.type === 'PROSPERITY') {
-            if (targetCell.crystalState === 'HUMAN') {
-                targetCell.prosperity = Math.max(0, Math.min(100, change.value!));
+        if (change.type === 'PROSPERITY') {
+            this.grid[change.y][change.x].prosperity = change.value!;
+        } else if (change.type === 'STATE') {
+            const cell = this.grid[change.y][change.x];
+            if (change.value === 0) {
+                cell.crystalState = 'EMPTY';
+                cell.prosperity = 0;
+                cell.isMining = false;
+            } else if (change.value === 1) {
+                cell.crystalState = 'HUMAN';
+                // prosperity set separately
             }
         } else if (change.type === 'MINING_STATE') {
-            if (targetCell.crystalState === 'HUMAN') {
-                targetCell.isMining = change.value === 1;
-            }
+            this.grid[change.y][change.x].isMining = change.value === 1;
         } else if (change.type === 'MIGRATE') {
-            // 确保源还是 HUMAN (可能被其他事件改变)
-            if (targetCell.crystalState === 'HUMAN') {
-                const destCell = this.grid[change.toY!][change.toX!];
-                if (destCell.crystalState === 'EMPTY') {
-                    // 移动
-                    destCell.crystalState = 'HUMAN';
-                    destCell.prosperity = change.value!;
-                    targetCell.crystalState = 'EMPTY';
-                    targetCell.prosperity = 0;
+            // 确保源位置还是人类（可能被其他规则杀死了）
+            if (this.grid[change.y][change.x].crystalState === 'HUMAN') {
+                // 移出
+                this.grid[change.y][change.x].crystalState = 'EMPTY';
+                this.grid[change.y][change.x].prosperity = 0;
+                this.grid[change.y][change.x].isMining = false;
+                
+                // 移入
+                if (change.toX !== undefined && change.toY !== undefined) {
+                    const target = this.grid[change.toY][change.toX];
+                    // 确保目标位置还是空的（可能被其他规则占用了）
+                    if (target.crystalState === 'EMPTY') {
+                        target.crystalState = 'HUMAN';
+                        target.prosperity = change.value!;
+                    }
                 }
             }
         }
     }
-    
-    // Alpha 覆盖 Human (在 updateCrystalLayer 中处理，或者在这里补充)
-    // 规则：扩展的alpha晶石格可以直接覆盖人类格
-    // 这部分逻辑应该在 updateCrystalLayer 的扩张逻辑中，确保 Alpha 视 Human 为可占据目标
+  }
+
+  // 辅助方法：生成人类
+  spawnHuman(initialProsperity: number) {
+    // 优先使用设定的重生点
+    if (this.params.humanSpawnPoint) {
+        const { x, y } = this.params.humanSpawnPoint;
+        if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
+            const cell = this.grid[y][x];
+            if (cell.exists && cell.crystalState !== 'ALPHA') {
+                cell.crystalState = 'HUMAN';
+                cell.prosperity = initialProsperity;
+                return;
+            }
+        }
+    }
+
+    // 随机生成一个人类聚落
+    let attempts = 0;
+    while (attempts < 100) {
+        const rx = Math.floor(Math.random() * this.width);
+        const ry = Math.floor(Math.random() * this.height);
+        const cell = this.grid[ry][rx];
+        // 优先选择温度适宜的地方
+        const isTempSuitable = cell.temperature >= this.params.humanMinTemp && cell.temperature <= this.params.humanMaxTemp;
+        
+        if (cell.exists && cell.crystalState !== 'ALPHA' && (isTempSuitable || attempts > 50)) {
+            cell.crystalState = 'HUMAN';
+            cell.prosperity = initialProsperity;
+            break;
+        }
+        attempts++;
+    }
   }
 
   updateMantleLayer() {
     const { 
-        mantleTimeScale, expansionThreshold, shrinkThreshold, 
-        mantleEnergyLevel, maxRadius, minRadius 
+        expansionThreshold, shrinkThreshold, mantleEnergyLevel, 
+        maxRadius, minRadius, distortionSpeed,
+        edgeGenerationWidth, edgeGenerationEnergy, edgeGenerationOffset,
+        edgeSupplyPointSpeed
     } = this.params;
+    
     const centerX = this.width / 2;
     const centerY = this.height / 2;
     
-    // 1. 计算化学势 (Chemical Potential) - 基于 Cahn-Hilliard 方程简化
-    // 目标：相分离 (Phase Separation) -> 自动聚团 + 填补空缺
-    // 能量守恒：通过扩散实现，不直接生成/销毁能量
+    // 更新噪声偏移
+    this.noiseOffsetX += distortionSpeed;
+    this.noiseOffsetY += distortionSpeed;
     
-    const diffusionCoeff = 0.2; // 扩散系数
-    const interfaceWidth = 1.5; // 界面宽度参数
-    
-    // 临时存储能量变化
-    const energyChanges = Array(this.height).fill(0).map(() => Array(this.width).fill(0));
-    
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        const cell = this.grid[y][x];
-        if (!cell.exists) continue;
-        
-        const neighbors = this.getNeighbors(x, y).filter(n => n.exists);
-        if (neighbors.length === 0) continue;
-        
-        // 计算局部平均能量
-        const avgEnergy = neighbors.reduce((sum, n) => sum + n.mantleEnergy, 0) / neighbors.length;
-        
-        // Cahn-Hilliard 动力学简化：
-        // 能量流向 = -∇μ (化学势梯度)
-        // μ = f'(c) - k∇²c
-        // 简化为：流向倾向于使能量接近 0 或 100 (相分离)，同时平滑界面
-        
-        // 1. 相分离力 (Double-well potential): 推动能量向 0 或 100 极化
-        // f'(c) ~ c * (c - 1) * (c - 0.5)
-        // 这里我们用更简单的逻辑：如果能量高，吸取周围能量；如果能量低，流出能量
-        // 但要保持总能量守恒，必须是交换
-        
-        // 2. 表面张力 (Surface Tension): 最小化界面 -> 填补空缺，平滑边缘
-        // 表现为扩散项：使局部能量趋于一致
-        
-        // 结合算法：
-        // 每个细胞与邻居交换能量
-        for (const neighbor of neighbors) {
-            // 能量差
-            const diff = neighbor.mantleEnergy - cell.mantleEnergy;
-            
-            // 交换量 = 扩散 + 聚集驱动
-            // 聚集驱动：如果两者都较高(>50)，倾向于均分保持高位；如果一高一低，高的吸取低的(Ostwald ripening)
-            // 但为了填补空缺，我们需要"高能量流向低能量" (常规扩散)
-            // 为了维持团块，我们需要"反向扩散" (Up-hill diffusion) 在特定条件下
-            
-            // 采用简单的非线性扩散：
-            // J = -D * ∇E + v * E * (1-E)
-            // 这里简化为：总是试图平滑 (填补空缺)，但受到"相"的牵引
-            
-            // 缓慢迁徙：引入一个随时间变化的偏置场
-            const time = this.timeStep * mantleTimeScale;
-            const biasX = Math.sin(time * 0.5);
-            const biasY = Math.cos(time * 0.5);
-            
-            // 基础扩散 (填补空缺)
-            let flow = diff * diffusionCoeff * 0.1;
-            
-            // 迁徙偏置 (缓慢流动)
-            const dx = neighbor.x - cell.x;
-            const dy = neighbor.y - cell.y;
-            const biasFlow = (dx * biasX + dy * biasY) * 0.05;
-            
-            flow += biasFlow;
-            
-            // 限制流速
-            flow = Math.max(-2.0, Math.min(2.0, flow));
-            
-            // 累积变化 (注意方向：flow > 0 表示 neighbor -> cell)
-            energyChanges[y][x] += flow;
-            energyChanges[neighbor.y][neighbor.x] -= flow;
-        }
-      }
-    }
-    
-    // 应用能量变化
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        const cell = this.grid[y][x];
-        if (cell.exists) {
-            cell.mantleEnergy += energyChanges[y][x];
-            // 软限制，允许轻微溢出但会被拉回
-            cell.mantleEnergy = Math.max(0, Math.min(150, cell.mantleEnergy));
-        }
-      }
-    }
-    
-    // 边缘能量生成机制 (随机迁移点供给)
-    const { edgeGenerationWidth, edgeGenerationEnergy, edgeGenerationOffset, edgeSupplyPointSpeed } = this.params;
-    
-    // 更新供给点位置
+    // 更新边缘供给点位置
     this.edgeSupplyPoints.forEach(point => {
-      point.angle += point.speed * (Math.random() * 0.5 + 0.75); // 随机扰动速度
-      if (point.angle > Math.PI * 2) point.angle -= Math.PI * 2;
-      if (point.angle < 0) point.angle += Math.PI * 2;
-      
-      // 偶尔改变速度方向
-      if (Math.random() < 0.01) {
-        point.speed = (Math.random() - 0.5) * (edgeSupplyPointSpeed || 0.05);
-      }
+        point.angle += point.speed;
+        // 保持在 0-2PI
+        if (point.angle > Math.PI * 2) point.angle -= Math.PI * 2;
+        if (point.angle < 0) point.angle += Math.PI * 2;
     });
 
-    if (edgeGenerationEnergy > 0) {
-        // 密度配置函数：计算某点受到所有供给点的影响
-        const getDensity = (angle: number) => {
-          let density = 0;
-          for (const point of this.edgeSupplyPoints) {
-            // 计算角度差 (考虑周期性)
-            let diff = Math.abs(angle - point.angle);
-            if (diff > Math.PI) diff = Math.PI * 2 - diff;
-            
-            // 高斯分布影响
-            // 宽度由 edgeGenerationWidth 控制 (这里作为角度宽度的影响因子)
-            // 假设 width=2 对应约 30度 (PI/6) 的影响范围
-            const sigma = (edgeGenerationWidth || 2) * 0.15; 
-            density += Math.exp(-(diff * diff) / (2 * sigma * sigma));
-          }
-          return density;
-        };
-
-        // 计算每个点到最近边缘的距离（BFS）
-        const distToEdge = Array(this.height).fill(0).map(() => Array(this.width).fill(Infinity));
-        const queue: {x: number, y: number, dist: number}[] = [];
-
-        // 初始化：找到所有直接边缘点（距离为0）
-        for (let y = 0; y < this.height; y++) {
-            for (let x = 0; x < this.width; x++) {
-                const cell = this.grid[y][x];
-                if (!cell.exists) continue;
-
-                const neighbors = this.getNeighbors(x, y);
-                // 如果有不存在的邻居，或者是地图边界，则是边缘
-                if (neighbors.some(n => !n.exists) || neighbors.length < 8) {
-                    distToEdge[y][x] = 0;
-                    queue.push({x, y, dist: 0});
-                }
-            }
-        }
-
-        // BFS 扩散距离
-        let head = 0;
-        while(head < queue.length) {
-            const {x, y, dist} = queue[head++];
-            
-            // 如果距离已经超过需要的最大范围（offset + width），可以停止扩散该分支
-            // 但为了准确性，我们通常计算全图或足够大的范围
-            // 这里优化：只计算到 offset + width + 1
-            const maxDist = (edgeGenerationOffset || 0) + (edgeGenerationWidth || 2) + 1;
-            if (dist >= maxDist) continue;
-
-            const neighbors = this.getNeighbors(x, y);
-            for (const n of neighbors) {
-                if (n.exists && distToEdge[n.y][n.x] === Infinity) {
-                    distToEdge[n.y][n.x] = dist + 1;
-                    queue.push({x: n.x, y: n.y, dist: dist + 1});
-                }
-            }
-        }
-
-        // 应用能量
-        const offset = edgeGenerationOffset || 0;
-        const width = edgeGenerationWidth || 2;
-
-        for (let y = 0; y < this.height; y++) {
-            for (let x = 0; x < this.width; x++) {
-                const cell = this.grid[y][x];
-                if (!cell.exists) continue;
-
-                const dist = distToEdge[y][x];
-                
-                // 判断是否在生成范围内：[offset, offset + width)
-                // 例如 offset=0, width=2 => dist 0, 1
-                // offset=1, width=2 => dist 1, 2
-                if (dist >= offset && dist < offset + width) {
-                    // 计算当前点的角度
-                    const dx = x - centerX;
-                    const dy = y - centerY;
-                    let angle = Math.atan2(dy, dx);
-                    if (angle < 0) angle += Math.PI * 2;
-                    
-                    // 获取供给密度
-                    const density = getDensity(angle);
-                    
-                    // 应用能量供给
-                    cell.mantleEnergy += edgeGenerationEnergy * density;
-                }
-            }
-        }
-    }
-
-    // 边缘扩张/缩减逻辑 (保持不变，但基于新的能量分布)
+    // 第一步：计算能量变化 (Cahn-Hilliard 简化版 + 噪声源)
+    const newEnergies = this.grid.map(row => row.map(c => c.mantleEnergy));
+    
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const cell = this.grid[y][x];
         if (!cell.exists) continue;
         
-        const neighbors = this.getNeighbors(x, y);
-        const isEdge = neighbors.some(n => !n.exists);
+        // 1. 基础噪声能量源 (模拟地幔对流)
+        const noiseVal = generatePerlinNoise(x * 0.1 + this.noiseOffsetX, y * 0.1 + this.noiseOffsetY);
+        // 将噪声值映射到能量波动 (-1~1 -> 0.9~1.1)
+        const energyFluctuation = 1 + noiseVal * 0.1;
         
-        if (isEdge) {
-            // 简单的扩张逻辑：能量过剩则扩张
-            if (cell.mantleEnergy > expansionThreshold) {
-                const emptyNeighbors = neighbors.filter(n => !n.exists);
-                if (emptyNeighbors.length > 0) {
-                    const validTargets = emptyNeighbors.filter(n => {
-                        const nDist = Math.sqrt((n.x - centerX) ** 2 + (n.y - centerY) ** 2);
-                        return nDist <= maxRadius;
-                    });
-                    
-                    if (validTargets.length > 0) {
-                        const target = validTargets[Math.floor(Math.random() * validTargets.length)];
-                        target.exists = true;
-                        target.mantleEnergy = cell.mantleEnergy * 0.5; // 分裂能量
-                        cell.mantleEnergy *= 0.5;
-                    }
+        // 2. 邻居平均 (扩散)
+        const neighbors = this.getNeighbors(x, y);
+        const avgEnergy = neighbors.reduce((sum, n) => sum + n.mantleEnergy, 0) / neighbors.length;
+        
+        // 3. 趋向稳定值 (相分离)
+        // 如果能量高，倾向于更高；如果能量低，倾向于更低 (但在一定范围内)
+        // 这里简化为趋向于当前环境的平均能量等级
+        const targetEnergy = mantleEnergyLevel * energyFluctuation;
+        
+        // 综合更新
+        let newEnergy = avgEnergy * 0.95 + targetEnergy * 0.05;
+        
+        // 4. 边缘能量生成 (模拟外部能量注入)
+        // 计算到中心的距离
+        const dist = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+        
+        // 找到当前方向上的最外层边界
+        // 简化算法：如果当前点存在，且向外延伸方向的邻居不存在，则为边缘
+        // 或者直接基于距离判断，假设地形大致是圆形的
+        
+        // 更精确的边缘检测：检查8邻域是否有不存在的点
+        const hasVoidNeighbor = neighbors.length < 8 || neighbors.some(n => !n.exists);
+        
+        if (hasVoidNeighbor) {
+            // 这是一个边缘点
+            // 检查是否在供给点附近
+            const angle = Math.atan2(y - centerY, x - centerX);
+            let normalizedAngle = angle;
+            if (normalizedAngle < 0) normalizedAngle += Math.PI * 2;
+            
+            let isNearSupplyPoint = false;
+            for (const point of this.edgeSupplyPoints) {
+                let diff = Math.abs(normalizedAngle - point.angle);
+                if (diff > Math.PI) diff = Math.PI * 2 - diff;
+                
+                // 供给范围约为 45度 (PI/4)
+                if (diff < Math.PI / 4) {
+                    isNearSupplyPoint = true;
+                    break;
                 }
-            } 
-            // 简单的缩减逻辑：能量过低则消失
-            else if (cell.mantleEnergy < shrinkThreshold) {
-                const dist = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
-                if (dist > minRadius) {
-                    // 能量回流给邻居 (守恒)
-                    const existingNeighbors = neighbors.filter(n => n.exists);
-                    if (existingNeighbors.length > 0) {
-                        const energyPerNeighbor = cell.mantleEnergy / existingNeighbors.length;
-                        existingNeighbors.forEach(n => n.mantleEnergy += energyPerNeighbor);
+            }
+            
+            if (isNearSupplyPoint) {
+                // 只有在供给点附近的边缘才生成能量
+                // 使用 edgeGenerationOffset 控制从边缘向内第几层开始生成
+                // 这里简单处理：直接给边缘点加能量，扩散逻辑会将其传导进去
+                // 如果需要更精确的"向内偏移"，需要BFS或其他方式找到向内N层的点，这里暂简化
+                newEnergy += edgeGenerationEnergy;
+            }
+        }
+        
+        // 5. 晶石吸收 (能量汇)
+        if (cell.crystalState !== 'EMPTY') {
+            // 晶石吸收地幔能量
+            const absorption = newEnergy * this.params.mantleAbsorption;
+            newEnergy -= absorption;
+            // 能量转移给晶石 (在 updateCrystalLayer 中处理增加，这里只处理减少)
+        }
+        
+        newEnergies[y][x] = newEnergy;
+      }
+    }
+    
+    // 应用能量更新
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        if (this.grid[y][x].exists) {
+            this.grid[y][x].mantleEnergy = newEnergies[y][x];
+        }
+      }
+    }
+    
+    // 第二步：地形演变 (扩张/缩减)
+    // 使用单独的循环，避免更新顺序影响
+    const terrainChanges: {x: number, y: number, action: 'expand' | 'shrink'}[] = [];
+    
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const cell = this.grid[y][x];
+        const dist = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+        
+        if (cell.exists) {
+            // 检查缩减
+            // 能量过低且不是核心区域 (minRadius)
+            if (cell.mantleEnergy < shrinkThreshold && dist > minRadius) {
+                cell.shrinkAccumulator += (shrinkThreshold - cell.mantleEnergy);
+                if (cell.shrinkAccumulator > 100) {
+                    // 只有当没有晶石时才缩减
+                    if (cell.crystalState === 'EMPTY') {
+                        terrainChanges.push({x, y, action: 'shrink'});
                     }
-                    
-                    cell.exists = false;
-                    cell.mantleEnergy = 0;
-                    cell.crystalState = 'EMPTY';
+                    cell.shrinkAccumulator = 0;
+                }
+            } else {
+                cell.shrinkAccumulator = Math.max(0, cell.shrinkAccumulator - 1);
+            }
+            
+            // 检查扩张 (向空邻居)
+            if (cell.mantleEnergy > expansionThreshold && dist < maxRadius) {
+                const emptyNeighbors = this.getNeighbors(x, y, true).filter(n => !n.exists);
+                if (emptyNeighbors.length > 0) {
+                    // 随机选择一个空邻居扩张
+                    const target = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
+                    // 检查目标点是否在最大半径内
+                    const targetDist = Math.sqrt((target.x - centerX) ** 2 + (target.y - centerY) ** 2);
+                    if (targetDist < maxRadius) {
+                        terrainChanges.push({x: target.x, y: target.y, action: 'expand'});
+                        // 消耗能量
+                        cell.mantleEnergy -= 20; 
+                    }
                 }
             }
         }
       }
+    }
+    
+    // 应用地形变化
+    for (const change of terrainChanges) {
+        const cell = this.grid[change.y][change.x];
+        if (change.action === 'expand') {
+            cell.exists = true;
+            cell.mantleEnergy = 30; // 新生土地初始能量
+        } else if (change.action === 'shrink') {
+            cell.exists = false;
+            cell.mantleEnergy = 0;
+            cell.crystalState = 'EMPTY'; // 确保清除晶石(虽然前面检查了)
+        }
     }
   }
   
   updateClimateLayer() {
-    const { diffusionRate, advectionRate, thunderstormThreshold, seasonalAmplitude } = this.params;
+    const { diffusionRate, advectionRate, thunderstormThreshold, mantleHeatFactor } = this.params;
     
-    const timeCycle = (this.timeStep % 1000) / 1000.0;
-    const seasonalOffset = seasonalAmplitude * Math.sin(2 * Math.PI * timeCycle);
-    
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        const cell = this.grid[y][x];
-        if (!cell.exists) {
-            cell.temperature = -50;
-            cell.hasThunderstorm = false;
-            continue;
-        }
-        
-        const normalizedEnergy = Math.min(100, cell.mantleEnergy); 
-        // 应用地幔热量系数：系数越大，地幔能量对温度的贡献越大
-        // 默认系数 0.1 对应之前的 0.5 (因为 0.1 * 5 = 0.5, 这里我们调整公式使其更直观)
-        // 新公式：baseTemp = (Energy - 50) * factor * 5 + seasonal
-        cell.baseTemperature = (normalizedEnergy - 50.0) * (this.params.mantleHeatFactor * 5) + seasonalOffset;
-        
-        const neighbors = this.getNeighbors(x, y).filter(n => n.exists);
-        if (neighbors.length > 0) {
-            const avgTemp = neighbors.reduce((sum, n) => sum + n.temperature, 0) / neighbors.length;
-            cell.temperatureChange = diffusionRate * (avgTemp - cell.temperature);
-        }
-        
-        if (cell.crystalState === 'ALPHA') cell.temperatureChange -= 0.5;
-        if (cell.crystalState === 'BETA') cell.temperatureChange -= 0.2;
-        
-        cell.temperature += cell.temperatureChange;
-        cell.temperature += (cell.baseTemperature - cell.temperature) * 0.1; 
-        
-        cell.temperature = Math.max(-50, Math.min(50, cell.temperature));
-      }
-    }
+    // 1. 计算温度变化 (扩散 + 对流 + 地幔加热)
+    const newTemps = this.grid.map(row => row.map(c => c.temperature));
     
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const cell = this.grid[y][x];
         if (!cell.exists) continue;
         
-        const neighbors = this.getNeighbors(x, y).filter(n => n.exists);
-        let maxDiff = 0;
-        for (const n of neighbors) {
-            maxDiff = Math.max(maxDiff, Math.abs(n.temperature - cell.temperature));
-        }
+        // 扩散 (热传导)
+        const neighbors = this.getNeighbors(x, y);
+        const avgTemp = neighbors.reduce((sum, n) => sum + n.temperature, 0) / neighbors.length;
+        let newTemp = cell.temperature * (1 - diffusionRate) + avgTemp * diffusionRate;
         
-        cell.hasThunderstorm = maxDiff > thunderstormThreshold;
+        // 地幔加热 (地热)
+        // 地幔能量越高，温度越高
+        // 假设地幔能量 100 对应温度增加 10度 (系数 0.1)
+        newTemp += cell.mantleEnergy * mantleHeatFactor * 0.1;
+        
+        // 环境冷却 (模拟辐射冷却)
+        newTemp -= 0.5;
+        
+        // 季节性波动 (正弦波)
+        // const season = Math.sin(this.timeStep * 0.01) * this.params.seasonalAmplitude;
+        // newTemp += season * 0.01;
+        
+        newTemps[y][x] = newTemp;
+      }
+    }
+    
+    // 应用温度并检测雷暴
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        if (this.grid[y][x].exists) {
+            this.grid[y][x].temperature = newTemps[y][x];
+            
+            // 雷暴生成逻辑
+            // 温度剧烈变化区域容易产生雷暴
+            // 这里简化为：局部温度差异大
+            const neighbors = this.getNeighbors(x, y);
+            let maxDiff = 0;
+            for (const n of neighbors) {
+                maxDiff = Math.max(maxDiff, Math.abs(n.temperature - this.grid[y][x].temperature));
+            }
+            
+            this.grid[y][x].hasThunderstorm = maxDiff > thunderstormThreshold;
+        } else {
+            this.grid[y][x].temperature = 0;
+            this.grid[y][x].hasThunderstorm = false;
+        }
       }
     }
   }
   
   updateCrystalLayer() {
     const { 
-        alphaEnergyDemand, betaEnergyDemand, mantleAbsorption, thunderstormEnergy,
-        expansionCost, maxCrystalEnergy 
+        alphaEnergyDemand, betaEnergyDemand, mantleAbsorption, 
+        thunderstormEnergy, expansionCost, maxCrystalEnergy,
+        energySharingRate, energySharingLimit, energyDecayRate
     } = this.params;
     
-    // 1. 能量获取与消耗 (直接更新当前状态)
+    // 1. 能量获取与消耗
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const cell = this.grid[y][x];
-        if (!cell.exists || cell.crystalState !== 'ALPHA') {
-            cell.isAbsorbing = false;
-            cell.crystalEnergy = 0;
-            continue;
-        }
+        if (!cell.exists || cell.crystalState === 'EMPTY' || cell.crystalState === 'HUMAN') continue;
         
-        // 吸收能量
-        let energyInput = 0;
-        const absorbed = cell.mantleEnergy * mantleAbsorption;
-        energyInput += absorbed;
+        cell.isAbsorbing = false;
+        cell.crystalEnergy = 0; // 重置当帧能量增益
         
-        if (absorbed > 0.1) {
-            cell.mantleEnergy = Math.max(0, cell.mantleEnergy - absorbed);
+        // 吸收地幔能量
+        if (cell.mantleEnergy > 10) {
+            const absorbed = cell.mantleEnergy * mantleAbsorption;
+            cell.storedEnergy += absorbed;
+            cell.crystalEnergy += absorbed; // 用于可视化
             cell.isAbsorbing = true;
-        } else {
-            cell.isAbsorbing = false;
         }
         
-        if (cell.hasThunderstorm) energyInput += thunderstormEnergy;
+        // 雷暴充能
+        if (cell.hasThunderstorm) {
+            cell.storedEnergy += thunderstormEnergy;
+            cell.crystalEnergy += thunderstormEnergy;
+        }
         
-        // 记录输入用于可视化
-        cell.crystalEnergy = energyInput;
-        
-        // 能量结算
-        const netEnergy = energyInput - alphaEnergyDemand;
-        cell.storedEnergy += netEnergy;
+        // 维持消耗
+        const demand = cell.crystalState === 'ALPHA' ? alphaEnergyDemand : betaEnergyDemand;
+        cell.storedEnergy -= demand;
         
         // 能量上限
-        cell.storedEnergy = Math.min(cell.storedEnergy, maxCrystalEnergy);
+        if (cell.storedEnergy > maxCrystalEnergy) {
+            cell.storedEnergy = maxCrystalEnergy;
+        }
+        
+        // 能量枯竭
+        if (cell.storedEnergy <= 0) {
+            cell.crystalState = 'EMPTY';
+            cell.storedEnergy = 0;
+        }
       }
     }
 
-    // 1.5 能量共享 (Energy Sharing) - 局部扩散带衰减
-    // 逻辑：
-    // 1. 遍历所有 ALPHA 晶石
-    // 2. 与邻居交换能量：能量从高流向低
-    // 3. 传输过程中会有损耗 (decay)，模拟距离衰减
-    // 4. 这样远距离传输会因为多次损耗而效率降低
+    // 2. 能量共享 (ALPHA 晶石网络) - 迭代式扩散
+    // 清除上一帧的流量记录
+    for (let y = 0; y < this.height; y++) {
+        for (let x = 0; x < this.width; x++) {
+            this.grid[y][x].energyFlow = [];
+        }
+    }
 
-    const { energySharingRate, energyDecayRate } = this.params;
-    const decay = energyDecayRate || 0.05;
-    const limit = maxCrystalEnergy * (this.params.energySharingLimit || 1.2);
-    
-    // 使用临时数组存储变化，避免顺序依赖
+    // 简单的迭代扩散：高能量向低能量流动
+    // 为了避免顺序影响，使用临时数组记录变化
     const energyChanges = Array(this.height).fill(0).map(() => Array(this.width).fill(0));
 
-    // 清空上一帧的能量流记录
     for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        if (this.grid[y][x]) this.grid[y][x].energyFlow = [];
-      }
-    }
+        for (let x = 0; x < this.width; x++) {
+            const cell = this.grid[y][x];
+            if (cell.crystalState !== 'ALPHA') continue;
 
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        const cell = this.grid[y][x];
-        if (!cell.exists || cell.crystalState !== 'ALPHA') continue;
+            const neighbors = this.getNeighbors(x, y);
+            const alphaNeighbors = neighbors.filter(n => n.crystalState === 'ALPHA');
 
-        const neighbors = this.getNeighbors(x, y).filter(n => n.exists && n.crystalState === 'ALPHA');
-        
-        for (const neighbor of neighbors) {
-            // 只计算单向流动 (高 -> 低)，避免重复计算
-            if (neighbor.storedEnergy > cell.storedEnergy) {
-                const diff = neighbor.storedEnergy - cell.storedEnergy;
-                
-                // 流出量
-                const flowOut = diff * (energySharingRate * 0.1); // 0.1 是时间步长系数，防止过快震荡
-                
-                // 接收量 = 流出量 * (1 - 衰减率)
-                const flowIn = flowOut * (1 - decay);
-                
-                // 检查接收方是否超过上限
-                if (cell.storedEnergy + energyChanges[y][x] + flowIn > limit) {
-                    continue;
-                }
-                
-                // 记录变化
-                energyChanges[y][x] += flowIn;
-                energyChanges[neighbor.y][neighbor.x] -= flowOut;
-                
-                // 记录流向: neighbor -> cell
-                neighbor.energyFlow.push({ x: cell.x, y: cell.y, amount: flowIn });
-            }
-        }
-      }
-    }
-
-    // 应用能量变化
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        const cell = this.grid[y][x];
-        if (!cell.exists || cell.crystalState !== 'ALPHA') continue;
-        
-        cell.storedEnergy += energyChanges[y][x];
-        // 确保能量不为负且不超过物理极限(虽然有limit检查，但为了安全)
-        cell.storedEnergy = Math.max(0, cell.storedEnergy);
-      }
-    }
-    
-    // 2. 状态转移 (基于 grid 计算 nextStates)
-    const nextStates: CellType[][] = this.grid.map(row => row.map(c => c.crystalState));
-    const nextStoredEnergy: number[][] = this.grid.map(row => row.map(c => c.storedEnergy));
-    
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        const cell = this.grid[y][x];
-        if (!cell.exists) continue;
-        
-        const neighbors = this.getNeighbors(x, y).filter(n => n.exists);
-        const alphaNeighbors = neighbors.filter(n => n.crystalState === 'ALPHA');
-        const betaNeighbors = neighbors.filter(n => n.crystalState === 'BETA');
-        
-        if (cell.crystalState === 'EMPTY') {
-            // 规则 1: 扩张 (基于邻居能量)
-            // 寻找能量充足的邻居
-            const richNeighbors = alphaNeighbors.filter(n => n.storedEnergy >= expansionCost);
-            
-            if (richNeighbors.length > 0) {
-                // 随机选择一个富裕邻居进行扩张
-                const parent = richNeighbors[Math.floor(Math.random() * richNeighbors.length)];
-                
-                // 扣除父节点能量 (在 nextStoredEnergy 中扣除)
-                // 注意：这里有并发问题，多个空地可能选择同一个父节点
-                // 简单起见，我们允许透支，或者概率性扩张
-                if (Math.random() < 0.3) { // 限制扩张速度
-                    nextStates[y][x] = 'ALPHA';
-                    nextStoredEnergy[y][x] = 5.0; // 新生晶石自带少量能量
+            // 向能量较低的邻居输送能量
+            for (const neighbor of alphaNeighbors) {
+                if (cell.storedEnergy > neighbor.storedEnergy) {
+                    const diff = cell.storedEnergy - neighbor.storedEnergy;
+                    // 传输量与差异成正比，受 sharingRate 控制
+                    // 同时也受 decayRate 限制（模拟阻力）
+                    let transferAmount = diff * 0.1 * energySharingRate; 
                     
-                    // 扣除父节点能量 (需要找到父节点在 nextStoredEnergy 中的位置)
-                    nextStoredEnergy[parent.y][parent.x] -= expansionCost;
+                    // 限制单次传输最大值，防止震荡
+                    if (transferAmount > 5) transferAmount = 5;
+                    
+                    // 确保自己不会因为传输而低于邻居 (考虑到多对多传输，这里只是简单估算)
+                    if (cell.storedEnergy - transferAmount < neighbor.storedEnergy + transferAmount) {
+                        transferAmount = diff * 0.4; // 平分差异
+                    }
+
+                    if (transferAmount > 0.1) {
+                        // 记录能量变化
+                        energyChanges[y][x] -= transferAmount;
+                        
+                        // 接收方收到的能量要扣除衰减
+                        const receivedAmount = transferAmount * (1 - energyDecayRate);
+                        energyChanges[neighbor.y][neighbor.x] += receivedAmount;
+
+                        // 记录流向用于可视化
+                        cell.energyFlow.push({
+                            x: neighbor.x,
+                            y: neighbor.y,
+                            amount: transferAmount
+                        });
+                    }
                 }
             }
-        } else if (cell.crystalState === 'ALPHA') {
-            // 规则 2: 硬化 (能量耗尽)
-            if (cell.storedEnergy <= 0) {
-                nextStates[y][x] = 'BETA';
-                nextStoredEnergy[y][x] = 0;
+        }
+    }
+
+    // 应用能量共享变化
+    for (let y = 0; y < this.height; y++) {
+        for (let x = 0; x < this.width; x++) {
+            if (this.grid[y][x].crystalState === 'ALPHA') {
+                this.grid[y][x].storedEnergy += energyChanges[y][x];
+                // 再次检查上限和下限
+                if (this.grid[y][x].storedEnergy > maxCrystalEnergy * energySharingLimit) {
+                    this.grid[y][x].storedEnergy = maxCrystalEnergy * energySharingLimit;
+                }
+                if (this.grid[y][x].storedEnergy < 0) {
+                    this.grid[y][x].storedEnergy = 0;
+                }
             }
+        }
+    }
+    
+    // 3. 晶石扩张
+    const crystalChanges: {x: number, y: number, type: CellType}[] = [];
+    
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const cell = this.grid[y][x];
+        if (cell.crystalState === 'ALPHA' && cell.storedEnergy > expansionCost * 2) {
+            // 尝试扩张
+            const neighbors = this.getNeighbors(x, y);
+            const emptyNeighbors = neighbors.filter(n => n.exists && n.crystalState === 'EMPTY');
             
-            // 规则 3: 孤立死亡 (可选，防止孤点)
-            if (alphaNeighbors.length === 0 && betaNeighbors.length < 2 && cell.storedEnergy < 5) {
-                nextStates[y][x] = 'EMPTY';
-                nextStoredEnergy[y][x] = 0;
+            if (emptyNeighbors.length > 0) {
+                const target = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
+                
+                // 决定生成 Alpha 还是 Beta
+                // 简单逻辑：距离中心越远，越容易生成 Beta
+                const dist = Math.sqrt((target.x - this.width/2)**2 + (target.y - this.height/2)**2);
+                const betaChance = Math.min(0.8, Math.max(0, (dist - 5) / 15));
+                
+                const newType = Math.random() < betaChance ? 'BETA' : 'ALPHA';
+                
+                crystalChanges.push({x: target.x, y: target.y, type: newType});
+                cell.storedEnergy -= expansionCost;
             }
-        } else if (cell.crystalState === 'BETA') {
-            // 规则 4: 不可逆
-            nextStates[y][x] = 'BETA';
         }
       }
     }
     
-    // 应用下一状态
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        this.grid[y][x].crystalState = nextStates[y][x];
-        this.grid[y][x].storedEnergy = nextStoredEnergy[y][x];
-      }
+    // 应用扩张
+    for (const change of crystalChanges) {
+        const cell = this.grid[change.y][change.x];
+        // 再次检查是否为空 (可能被多个晶石同时选中)
+        if (cell.crystalState === 'EMPTY') {
+            cell.crystalState = change.type;
+            cell.storedEnergy = 10; // 初始能量
+        }
     }
   }
   
-  getNeighbors(x: number, y: number): Cell[] {
+  getNeighbors(x: number, y: number, includeVoid: boolean = false): Cell[] {
     const neighbors: Cell[] = [];
     const dirs = [
       [-1, -1], [0, -1], [1, -1],
@@ -861,18 +817,15 @@ export class SimulationEngine {
     for (const [dx, dy] of dirs) {
       const nx = x + dx;
       const ny = y + dy;
+      
       if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height) {
-        neighbors.push(this.grid[ny][nx]);
+        const cell = this.grid[ny][nx];
+        if (includeVoid || cell.exists) {
+          neighbors.push(cell);
+        }
       }
     }
+    
     return neighbors;
-  }
-  
-  resize(width: number, height: number) {
-      this.width = width;
-      this.height = height;
-      this.timeStep = 0;
-      this.cycleCount = 0;
-      this.grid = this.initializeGrid();
   }
 }

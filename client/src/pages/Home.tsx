@@ -53,6 +53,7 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   humanExpansionThreshold: { desc: "触发扩张所需的繁荣度阈值", impact: "高: 难以扩张 / 低: 容易扩张" },
   humanMiningReward: { desc: "开采Beta晶石获得的繁荣度奖励", impact: "高: 采矿收益大 / 低: 采矿收益小" },
   humanMigrationThreshold: { desc: "触发迁移的繁荣度阈值", impact: "高: 容易迁移 / 低: 坚守原地" },
+  humanDeathThreshold: { desc: "人类灭亡的繁荣度阈值", impact: "繁荣度低于此值时聚落消失" },
   alphaRadiationDamage: { desc: "Alpha辐射伤害", impact: "Alpha晶石对周围人类造成的繁荣度持续伤害" },
   humanSpawnPoint: { desc: "人类重生点坐标", impact: "人类灭绝后重新生成的固定位置" },
   energySharingLimit: { desc: "晶石能量共享上限", impact: "限制单次共享的最大能量值" },
@@ -509,38 +510,46 @@ export default function Home() {
     setIsRestartOpen(false);
     
     // Reset Zoom
-    const canvas = d3.select(canvasRef.current);
-    canvas.call(d3.zoom<HTMLCanvasElement, unknown>().transform, d3.zoomIdentity);
+    if (canvasRef.current) {
+      const canvas = d3.select(canvasRef.current);
+      canvas.call(d3.zoom<HTMLCanvasElement, unknown>().transform, d3.zoomIdentity);
+    }
   };
   
   const resetParams = () => {
       setParams(DEFAULT_PARAMS);
   };
 
-  const ParamControl = ({ label, paramKey, min, max, step }: { label: string, paramKey: keyof SimulationParams, min: number, max: number, step: number }) => (
-    <div className="space-y-1">
-      <div className="flex justify-between text-xs items-center">
-        <div className="flex items-center gap-1">
-            <span>{label}</span>
-            <Tooltip>
-                <TooltipTrigger>
-                    <HelpCircle className="w-3 h-3 text-neutral-500" />
-                </TooltipTrigger>
-                <TooltipContent className="max-w-xs bg-neutral-800 border-neutral-700 text-neutral-200">
-                    <p className="font-bold mb-1">{PARAM_INFO[paramKey].desc}</p>
-                    <p className="text-xs text-neutral-400">{PARAM_INFO[paramKey].impact}</p>
-                </TooltipContent>
-            </Tooltip>
+  const ParamControl = ({ label, paramKey, min, max, step }: { label: string, paramKey: keyof SimulationParams, min: number, max: number, step: number }) => {
+    const value = params[paramKey];
+    // 确保 value 是数字，如果是对象（如 humanSpawnPoint）则不渲染 Slider 或渲染特殊控件
+    if (typeof value !== 'number') return null;
+
+    return (
+      <div className="space-y-1">
+        <div className="flex justify-between text-xs items-center">
+          <div className="flex items-center gap-1">
+              <span>{label}</span>
+              <Tooltip>
+                  <TooltipTrigger>
+                      <HelpCircle className="w-3 h-3 text-neutral-500" />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs bg-neutral-800 border-neutral-700 text-neutral-200">
+                      <p className="font-bold mb-1">{PARAM_INFO[paramKey]?.desc || label}</p>
+                      <p className="text-xs text-neutral-400">{PARAM_INFO[paramKey]?.impact || ''}</p>
+                  </TooltipContent>
+              </Tooltip>
+          </div>
+          <span>{value}</span>
         </div>
-        <span>{params[paramKey]}</span>
+        <Slider 
+          min={min} max={max} step={step} 
+          value={[value]} 
+          onValueChange={([v]) => setParams({...params, [paramKey]: v})}
+        />
       </div>
-      <Slider 
-        min={min} max={max} step={step} 
-        value={[params[paramKey]]} 
-        onValueChange={([v]) => setParams({...params, [paramKey]: v})}
-      />
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="h-screen w-screen flex flex-col bg-neutral-950 text-neutral-200 font-mono overflow-hidden">
@@ -765,7 +774,7 @@ export default function Home() {
                 <ParamControl label="边缘生成能量" paramKey="edgeGenerationEnergy" min={0} max={20} step={0.1} />
                 <ParamControl label="供给点数量(需重启)" paramKey="edgeSupplyPointCount" min={1} max={10} step={1} />
                 <ParamControl label="供给点迁移速度" paramKey="edgeSupplyPointSpeed" min={0} max={0.5} step={0.01} />
-                <ParamControl label="地幔热量系数" paramKey="mantleHeatFactor" min={0} max={1.0} step={0.01} />
+                <ParamControl label="地幔热量系数" paramKey="mantleHeatFactor" min={0} max={200} step={0.1} />
               </div>
               
               {/* 气候层参数 */}
@@ -798,6 +807,7 @@ export default function Home() {
                   <ParamControl label="扩张阈值" paramKey="humanExpansionThreshold" min={10} max={200} step={5} />
                   <ParamControl label="采矿奖励" paramKey="humanMiningReward" min={0} max={100} step={1} />
                   <ParamControl label="迁移阈值" paramKey="humanMigrationThreshold" min={0} max={100} step={1} />
+                  <ParamControl label="灭亡阈值" paramKey="humanDeathThreshold" min={0} max={50} step={1} />
                   <ParamControl label="Alpha辐射伤害" paramKey="alphaRadiationDamage" min={0} max={20} step={0.5} />
                 </div>
             </TabsContent>
