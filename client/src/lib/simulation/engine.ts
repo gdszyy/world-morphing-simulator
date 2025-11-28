@@ -1,7 +1,22 @@
 import { generatePerlinNoise } from './perlin';
 
 // 类型定义
-export type CellType = 'EMPTY' | 'ALPHA' | 'BETA' | 'HUMAN';
+export type CellType = 'EMPTY' | 'ALPHA' | 'BETA' | 'BIO';
+
+export interface BioAttributes {
+  minTemp: number;
+  maxTemp: number;
+  survivalMinTemp: number;
+  survivalMaxTemp: number;
+  prosperityGrowth: number;
+  prosperityDecay: number;
+  expansionThreshold: number;
+  miningReward: number;
+  migrationThreshold: number;
+  alphaRadiationDamage: number;
+  speciesId: number; // 种群ID
+  color: string; // 种群颜色
+}
 
 export interface Cell {
   x: number;
@@ -27,9 +42,10 @@ export interface Cell {
   isAbsorbing: boolean; // 是否正在吸收能量
   energyFlow: { x: number, y: number, amount: number }[]; // 能量流向记录 (目标x, 目标y, 数量)
 
-  // 人类层
+  // 生物层 (通用)
   prosperity: number; // 繁荣度
   isMining: boolean; // 是否正在开采Beta晶石
+  bioAttributes?: BioAttributes; // 生物属性
 }
 
 export interface SimulationParams {
@@ -66,67 +82,79 @@ export interface SimulationParams {
   energyDecayRate: number; // 能量传输衰减率
   harvestThreshold: number;
 
-  // 人类层参数
-  humanMinTemp: number; // 适宜温度下限
-  humanMaxTemp: number; // 适宜温度上限
-  humanSurvivalMinTemp: number; // 生存温度下限 (低于此值死亡)
-  humanSurvivalMaxTemp: number; // 生存温度上限 (高于此值死亡)
-  humanProsperityGrowth: number; // 适宜温度下的繁荣度增长
-  humanProsperityDecay: number; // 不适宜温度下的繁荣度衰减
-  humanExpansionThreshold: number; // 扩张所需的繁荣度阈值
-  humanMiningReward: number; // 消除Beta晶石获得的繁荣度
-  humanMigrationThreshold: number; // 低于此繁荣度开始迁移
-  humanDeathThreshold: number; // 繁荣度低于此值时消灭聚落
-  alphaRadiationDamage: number; // Alpha晶石辐射伤害 (每帧减少繁荣度)
-  humanSpawnPoint?: {x: number, y: number}; // 人类重生点
+  // 生物层通用参数
+  extinctionBonus: number; // 灭绝时提供的能量/繁荣度
+  competitionPenalty: number; // 种群竞争惩罚
+  mutationRate: number; // 变异概率
+  mutationStrength: number; // 变异强度 (0-1)
+  newSpeciesThreshold: number; // 成为新物种的变异阈值 (0.2)
+  
+  // 人类初始参数 (作为默认生物模板)
+  humanMinTemp: number;
+  humanMaxTemp: number;
+  humanSurvivalMinTemp: number;
+  humanSurvivalMaxTemp: number;
+  humanProsperityGrowth: number;
+  humanProsperityDecay: number;
+  humanExpansionThreshold: number;
+  humanMiningReward: number;
+  humanMigrationThreshold: number;
+  alphaRadiationDamage: number;
+  humanSpawnPoint?: {x: number, y: number};
 }
 
 export const DEFAULT_PARAMS: SimulationParams = {
   // 地幔层
   mantleTimeScale: 0.002,
-  expansionThreshold: 123,
-  shrinkThreshold: 2,
+  expansionThreshold: 82,
+  shrinkThreshold: 22,
   mantleEnergyLevel: 100,
-  maxRadius: 25,
-  minRadius: 5,
+  maxRadius: 15,
+  minRadius: 10,
   distortionSpeed: 0.01,
-  edgeGenerationWidth: 2,
-  edgeGenerationEnergy: 4,
+  edgeGenerationWidth: 3,
+  edgeGenerationEnergy: 19.5,
   edgeGenerationOffset: 1,
-  edgeSupplyPointCount: 3,
+  edgeSupplyPointCount: 6,
   edgeSupplyPointSpeed: 0.05,
-  mantleHeatFactor: 0.1,
+  mantleHeatFactor: 197,
   
   // 气候层
-  diffusionRate: 0.12,
+  diffusionRate: 0.2,
   advectionRate: 0.02,
-  thunderstormThreshold: 18,
+  thunderstormThreshold: 39,
   seasonalAmplitude: 5.0,
   
   // 晶石层
-  alphaEnergyDemand: 1.5,
-  betaEnergyDemand: 2.0,
-  mantleAbsorption: 0.1,
-  thunderstormEnergy: 10.0,
-  expansionCost: 8,
-  maxCrystalEnergy: 80,
-  energySharingRate: 1.2,
-  energySharingLimit: 1.2,
-  energyDecayRate: 0.05,
+  alphaEnergyDemand: 4.5,
+  betaEnergyDemand: 2.0, // 保持默认，未在截图中找到
+  mantleAbsorption: 0.1, // 保持默认
+  thunderstormEnergy: 32,
+  expansionCost: 8.5,
+  maxCrystalEnergy: 50,
+  energySharingRate: 1.45,
+  energySharingLimit: 1.2, // 保持默认
+  energyDecayRate: 0.09,
   harvestThreshold: 0.8,
 
-  // 人类层
-  humanMinTemp: 15,
-  humanMaxTemp: 25,
+  // 生物层通用
+  extinctionBonus: 50,
+  competitionPenalty: 5,
+  mutationRate: 0.1,
+  mutationStrength: 0.1,
+  newSpeciesThreshold: 0.2,
+
+  // 人类层 (默认生物)
+  humanMinTemp: 7,
+  humanMaxTemp: 34,
   humanSurvivalMinTemp: -50,
   humanSurvivalMaxTemp: 50,
   humanProsperityGrowth: 0.5,
-  humanProsperityDecay: 1.0,
+  humanProsperityDecay: 1.4,
   humanExpansionThreshold: 80,
-  humanMiningReward: 20,
-  humanMigrationThreshold: 40,
-  humanDeathThreshold: 10,
-  alphaRadiationDamage: 2.0,
+  humanMiningReward: 27,
+  humanMigrationThreshold: 42,
+  alphaRadiationDamage: 20,
 };
 
 export class SimulationEngine {
@@ -141,9 +169,9 @@ export class SimulationEngine {
   noiseOffsetY: number;
   edgeSupplyPoints: { angle: number, speed: number }[];
   
-  // 人类重生控制
-  humanExtinctionStep: number | null = null; // 记录人类灭绝的时间步
-  isFirstSpawn: boolean = true; // 是否是第一次生成
+  // 生物重生控制
+  bioExtinctionStep: number | null = null;
+  isFirstSpawn: boolean = true;
   
   constructor(width: number, height: number, params: SimulationParams = DEFAULT_PARAMS) {
     this.width = width;
@@ -212,226 +240,14 @@ export class SimulationEngine {
     this.updateMantleLayer();
     this.updateClimateLayer();
     this.updateCrystalLayer();
-    this.updateHumanLayer();
-  }
-
-  updateHumanLayer() {
-    const {
-        humanMinTemp, humanMaxTemp, humanSurvivalMinTemp, humanSurvivalMaxTemp,
-        humanProsperityGrowth, humanProsperityDecay, humanExpansionThreshold,
-        humanMiningReward, humanMigrationThreshold, humanDeathThreshold
-    } = this.params;
-
-    // 1. 检查人类数量
-    let humanCount = 0;
-    for (let y = 0; y < this.height; y++) {
-        for (let x = 0; x < this.width; x++) {
-            if (this.grid[y][x].crystalState === 'HUMAN') {
-                humanCount++;
-            }
-        }
-    }
-
-    // 2. 处理人类生成/重生逻辑
-    if (humanCount === 0) {
-        // 如果是第一次运行，且步数达到50，生成初始人类
-        if (this.isFirstSpawn) {
-            if (this.timeStep >= 50) {
-                this.spawnHuman(100); // 初始生成繁荣度为100
-                this.isFirstSpawn = false;
-            }
-        } 
-        // 如果不是第一次（灭绝后重生），记录灭绝时间
-        else {
-            if (this.humanExtinctionStep === null) {
-                this.humanExtinctionStep = this.timeStep;
-            }
-            
-            // 灭绝后经过20个迭代重生
-            if (this.timeStep - this.humanExtinctionStep >= 20) {
-                this.spawnHuman(100); // 重生繁荣度为100
-                this.humanExtinctionStep = null;
-            }
-        }
-        
-        // 如果本帧进行了生成（或等待生成），则不进行后续更新
-        if (humanCount === 0) return; 
-    } else {
-        // 如果有人类存在，重置灭绝计时器
-        this.humanExtinctionStep = null;
-        // 确保 isFirstSpawn 被标记为 false (防止手动放置人类后逻辑错误)
-        if (humanCount > 0) this.isFirstSpawn = false;
-    }
-
-    // 3. 更新人类状态
-    const changes: {x: number, y: number, type: 'PROSPERITY' | 'STATE' | 'MIGRATE' | 'MINING_STATE', value?: number, toX?: number, toY?: number}[] = [];
-
-    for (let y = 0; y < this.height; y++) {
-        for (let x = 0; x < this.width; x++) {
-            const cell = this.grid[y][x];
-            if (cell.crystalState !== 'HUMAN') continue;
-
-            // A. 温度检查 (生存极限)
-            if (cell.temperature < humanSurvivalMinTemp || cell.temperature > humanSurvivalMaxTemp) {
-                changes.push({x, y, type: 'STATE', value: 0}); // 0 for EMPTY
-                continue;
-            }
-
-            // B. 繁荣度更新
-            let prosperityChange = 0;
-            if (cell.temperature >= humanMinTemp && cell.temperature <= humanMaxTemp) {
-                prosperityChange += humanProsperityGrowth;
-            } else {
-                prosperityChange -= humanProsperityDecay;
-            }
-
-            // 邻居加成
-            const neighbors = this.getNeighbors(x, y);
-            const humanNeighbors = neighbors.filter(n => n.crystalState === 'HUMAN');
-            prosperityChange += humanNeighbors.length * 0.1;
-
-            // Alpha 辐射伤害
-            const alphaNeighbors = neighbors.filter(n => n.crystalState === 'ALPHA');
-            if (alphaNeighbors.length > 0) {
-                prosperityChange -= alphaNeighbors.length * this.params.alphaRadiationDamage;
-            }
-
-            // C. 采矿 (消除相邻 Beta 晶石)
-            const betaNeighbors = neighbors.filter(n => n.crystalState === 'BETA');
-            let isMining = false;
-            if (betaNeighbors.length > 0) {
-                const target = betaNeighbors[Math.floor(Math.random() * betaNeighbors.length)];
-                changes.push({x: target.x, y: target.y, type: 'STATE', value: 0}); // 变为 EMPTY
-                prosperityChange += humanMiningReward;
-                isMining = true;
-            }
-            
-            changes.push({x, y, type: 'MINING_STATE', value: isMining ? 1 : 0});
-
-            // 应用繁荣度变化
-            const newProsperity = cell.prosperity + prosperityChange;
-            changes.push({x, y, type: 'PROSPERITY', value: newProsperity});
-
-            // D. 死亡判定 (繁荣度过低)
-            if (newProsperity < humanDeathThreshold) {
-                changes.push({x, y, type: 'STATE', value: 0}); // 变为 EMPTY
-                continue;
-            }
-
-            // E. 扩张 (繁荣度足够高)
-            if (newProsperity > humanExpansionThreshold) {
-                // 寻找可扩张的空地
-                const emptyNeighbors = neighbors.filter(n => n.exists && n.crystalState === 'EMPTY');
-                if (emptyNeighbors.length > 0) {
-                    // 优先选择温度适宜的
-                    const suitableNeighbors = emptyNeighbors.filter(n => n.temperature >= humanMinTemp && n.temperature <= humanMaxTemp);
-                    const target = suitableNeighbors.length > 0 
-                        ? suitableNeighbors[Math.floor(Math.random() * suitableNeighbors.length)]
-                        : emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
-                    
-                    // 扩张消耗繁荣度
-                    changes.push({x, y, type: 'PROSPERITY', value: newProsperity - 30});
-                    // 新聚落初始繁荣度为30 (默认值)
-                    changes.push({x: target.x, y: target.y, type: 'STATE', value: 1}); // 1 for HUMAN
-                    changes.push({x: target.x, y: target.y, type: 'PROSPERITY', value: 30});
-                }
-            }
-
-            // F. 迁移 (繁荣度较低但不致死，且环境不适宜)
-            if (newProsperity < humanMigrationThreshold && (cell.temperature < humanMinTemp || cell.temperature > humanMaxTemp)) {
-                const emptyNeighbors = neighbors.filter(n => n.exists && n.crystalState === 'EMPTY');
-                // 寻找更好的环境
-                const betterNeighbors = emptyNeighbors.filter(n => {
-                    const tempDiffCurrent = Math.min(Math.abs(cell.temperature - humanMinTemp), Math.abs(cell.temperature - humanMaxTemp));
-                    const tempDiffNew = Math.min(Math.abs(n.temperature - humanMinTemp), Math.abs(n.temperature - humanMaxTemp));
-                    return tempDiffNew < tempDiffCurrent;
-                });
-
-                if (betterNeighbors.length > 0) {
-                    const target = betterNeighbors[Math.floor(Math.random() * betterNeighbors.length)];
-                    changes.push({x, y, type: 'MIGRATE', toX: target.x, toY: target.y, value: newProsperity});
-                }
-            }
-        }
-    }
-
-    // 应用变更
-    for (const change of changes) {
-        if (change.type === 'PROSPERITY') {
-            this.grid[change.y][change.x].prosperity = change.value!;
-        } else if (change.type === 'STATE') {
-            const cell = this.grid[change.y][change.x];
-            if (change.value === 0) {
-                cell.crystalState = 'EMPTY';
-                cell.prosperity = 0;
-                cell.isMining = false;
-            } else if (change.value === 1) {
-                cell.crystalState = 'HUMAN';
-                // prosperity set separately
-            }
-        } else if (change.type === 'MINING_STATE') {
-            this.grid[change.y][change.x].isMining = change.value === 1;
-        } else if (change.type === 'MIGRATE') {
-            // 确保源位置还是人类（可能被其他规则杀死了）
-            if (this.grid[change.y][change.x].crystalState === 'HUMAN') {
-                // 移出
-                this.grid[change.y][change.x].crystalState = 'EMPTY';
-                this.grid[change.y][change.x].prosperity = 0;
-                this.grid[change.y][change.x].isMining = false;
-                
-                // 移入
-                if (change.toX !== undefined && change.toY !== undefined) {
-                    const target = this.grid[change.toY][change.toX];
-                    // 确保目标位置还是空的（可能被其他规则占用了）
-                    if (target.crystalState === 'EMPTY') {
-                        target.crystalState = 'HUMAN';
-                        target.prosperity = change.value!;
-                    }
-                }
-            }
-        }
-    }
-  }
-
-  // 辅助方法：生成人类
-  spawnHuman(initialProsperity: number) {
-    // 优先使用设定的重生点
-    if (this.params.humanSpawnPoint) {
-        const { x, y } = this.params.humanSpawnPoint;
-        if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
-            const cell = this.grid[y][x];
-            if (cell.exists && cell.crystalState !== 'ALPHA') {
-                cell.crystalState = 'HUMAN';
-                cell.prosperity = initialProsperity;
-                return;
-            }
-        }
-    }
-
-    // 随机生成一个人类聚落
-    let attempts = 0;
-    while (attempts < 100) {
-        const rx = Math.floor(Math.random() * this.width);
-        const ry = Math.floor(Math.random() * this.height);
-        const cell = this.grid[ry][rx];
-        // 优先选择温度适宜的地方
-        const isTempSuitable = cell.temperature >= this.params.humanMinTemp && cell.temperature <= this.params.humanMaxTemp;
-        
-        if (cell.exists && cell.crystalState !== 'ALPHA' && (isTempSuitable || attempts > 50)) {
-            cell.crystalState = 'HUMAN';
-            cell.prosperity = initialProsperity;
-            break;
-        }
-        attempts++;
-    }
+    this.updateBioLayer();
   }
 
   updateMantleLayer() {
     const { 
-        expansionThreshold, shrinkThreshold, mantleEnergyLevel, 
-        maxRadius, minRadius, distortionSpeed,
-        edgeGenerationWidth, edgeGenerationEnergy, edgeGenerationOffset,
-        edgeSupplyPointSpeed
+        mantleTimeScale, expansionThreshold, shrinkThreshold, 
+        mantleEnergyLevel, maxRadius, minRadius, distortionSpeed,
+        edgeGenerationWidth, edgeGenerationEnergy, edgeGenerationOffset
     } = this.params;
     
     const centerX = this.width / 2;
@@ -441,15 +257,14 @@ export class SimulationEngine {
     this.noiseOffsetX += distortionSpeed;
     this.noiseOffsetY += distortionSpeed;
     
-    // 更新边缘供给点位置
-    this.edgeSupplyPoints.forEach(point => {
+    // 更新供给点位置
+    for (const point of this.edgeSupplyPoints) {
         point.angle += point.speed;
-        // 保持在 0-2PI
         if (point.angle > Math.PI * 2) point.angle -= Math.PI * 2;
         if (point.angle < 0) point.angle += Math.PI * 2;
-    });
+    }
 
-    // 第一步：计算能量变化 (Cahn-Hilliard 简化版 + 噪声源)
+    // 第一步：计算能量变化
     const newEnergies = this.grid.map(row => row.map(c => c.mantleEnergy));
     
     for (let y = 0; y < this.height; y++) {
@@ -457,37 +272,25 @@ export class SimulationEngine {
         const cell = this.grid[y][x];
         if (!cell.exists) continue;
         
-        // 1. 基础噪声能量源 (模拟地幔对流)
+        // 1. 基础噪声能量源
         const noiseVal = generatePerlinNoise(x * 0.1 + this.noiseOffsetX, y * 0.1 + this.noiseOffsetY);
-        // 将噪声值映射到能量波动 (-1~1 -> 0.9~1.1)
         const energyFluctuation = 1 + noiseVal * 0.1;
         
         // 2. 邻居平均 (扩散)
         const neighbors = this.getNeighbors(x, y);
         const avgEnergy = neighbors.reduce((sum, n) => sum + n.mantleEnergy, 0) / neighbors.length;
         
-        // 3. 趋向稳定值 (相分离)
-        // 如果能量高，倾向于更高；如果能量低，倾向于更低 (但在一定范围内)
-        // 这里简化为趋向于当前环境的平均能量等级
+        // 3. 趋向稳定值
         const targetEnergy = mantleEnergyLevel * energyFluctuation;
+        let newEnergy = cell.mantleEnergy * (1 - mantleTimeScale) + targetEnergy * mantleTimeScale;
         
-        // 综合更新
-        let newEnergy = avgEnergy * 0.95 + targetEnergy * 0.05;
+        // 扩散混合
+        newEnergy = newEnergy * 0.9 + avgEnergy * 0.1;
         
-        // 4. 边缘能量生成 (模拟外部能量注入)
-        // 计算到中心的距离
-        const dist = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
-        
-        // 找到当前方向上的最外层边界
-        // 简化算法：如果当前点存在，且向外延伸方向的邻居不存在，则为边缘
-        // 或者直接基于距离判断，假设地形大致是圆形的
-        
-        // 更精确的边缘检测：检查8邻域是否有不存在的点
+        // 4. 边缘能量生成
         const hasVoidNeighbor = neighbors.length < 8 || neighbors.some(n => !n.exists);
         
         if (hasVoidNeighbor) {
-            // 这是一个边缘点
-            // 检查是否在供给点附近
             const angle = Math.atan2(y - centerY, x - centerX);
             let normalizedAngle = angle;
             if (normalizedAngle < 0) normalizedAngle += Math.PI * 2;
@@ -497,7 +300,6 @@ export class SimulationEngine {
                 let diff = Math.abs(normalizedAngle - point.angle);
                 if (diff > Math.PI) diff = Math.PI * 2 - diff;
                 
-                // 供给范围约为 45度 (PI/4)
                 if (diff < Math.PI / 4) {
                     isNearSupplyPoint = true;
                     break;
@@ -505,20 +307,14 @@ export class SimulationEngine {
             }
             
             if (isNearSupplyPoint) {
-                // 只有在供给点附近的边缘才生成能量
-                // 使用 edgeGenerationOffset 控制从边缘向内第几层开始生成
-                // 这里简单处理：直接给边缘点加能量，扩散逻辑会将其传导进去
-                // 如果需要更精确的"向内偏移"，需要BFS或其他方式找到向内N层的点，这里暂简化
                 newEnergy += edgeGenerationEnergy;
             }
         }
         
-        // 5. 晶石吸收 (能量汇)
+        // 5. 晶石吸收
         if (cell.crystalState !== 'EMPTY') {
-            // 晶石吸收地幔能量
             const absorption = newEnergy * this.params.mantleAbsorption;
             newEnergy -= absorption;
-            // 能量转移给晶石 (在 updateCrystalLayer 中处理增加，这里只处理减少)
         }
         
         newEnergies[y][x] = newEnergy;
@@ -534,8 +330,7 @@ export class SimulationEngine {
       }
     }
     
-    // 第二步：地形演变 (扩张/缩减)
-    // 使用单独的循环，避免更新顺序影响
+    // 第二步：地形演变
     const terrainChanges: {x: number, y: number, action: 'expand' | 'shrink'}[] = [];
     
     for (let y = 0; y < this.height; y++) {
@@ -545,34 +340,32 @@ export class SimulationEngine {
         
         if (cell.exists) {
             // 检查缩减
-            // 能量过低且不是核心区域 (minRadius)
             if (cell.mantleEnergy < shrinkThreshold && dist > minRadius) {
                 cell.shrinkAccumulator += (shrinkThreshold - cell.mantleEnergy);
                 if (cell.shrinkAccumulator > 100) {
-                    // 只有当没有晶石时才缩减
-                    if (cell.crystalState === 'EMPTY') {
-                        terrainChanges.push({x, y, action: 'shrink'});
-                    }
-                    cell.shrinkAccumulator = 0;
+                    terrainChanges.push({x, y, action: 'shrink'});
                 }
             } else {
                 cell.shrinkAccumulator = Math.max(0, cell.shrinkAccumulator - 1);
             }
             
-            // 检查扩张 (向空邻居)
+            // 检查扩张
             if (cell.mantleEnergy > expansionThreshold && dist < maxRadius) {
-                const emptyNeighbors = this.getNeighbors(x, y, true).filter(n => !n.exists);
-                if (emptyNeighbors.length > 0) {
-                    // 随机选择一个空邻居扩张
-                    const target = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
-                    // 检查目标点是否在最大半径内
-                    const targetDist = Math.sqrt((target.x - centerX) ** 2 + (target.y - centerY) ** 2);
-                    if (targetDist < maxRadius) {
+                cell.expansionAccumulator += (cell.mantleEnergy - expansionThreshold);
+                if (cell.expansionAccumulator > 100) {
+                    // 寻找虚空邻居
+                    const neighbors = this.getNeighbors(x, y, true);
+                    const voidNeighbors = neighbors.filter(n => !n.exists);
+                    
+                    if (voidNeighbors.length > 0) {
+                        const target = voidNeighbors[Math.floor(Math.random() * voidNeighbors.length)];
                         terrainChanges.push({x: target.x, y: target.y, action: 'expand'});
-                        // 消耗能量
                         cell.mantleEnergy -= 20; 
                     }
+                    cell.expansionAccumulator = 0;
                 }
+            } else {
+                cell.expansionAccumulator = Math.max(0, cell.expansionAccumulator - 1);
             }
         }
       }
@@ -583,11 +376,11 @@ export class SimulationEngine {
         const cell = this.grid[change.y][change.x];
         if (change.action === 'expand') {
             cell.exists = true;
-            cell.mantleEnergy = 30; // 新生土地初始能量
+            cell.mantleEnergy = 30;
         } else if (change.action === 'shrink') {
             cell.exists = false;
             cell.mantleEnergy = 0;
-            cell.crystalState = 'EMPTY'; // 确保清除晶石(虽然前面检查了)
+            cell.crystalState = 'EMPTY';
         }
     }
   }
@@ -595,7 +388,6 @@ export class SimulationEngine {
   updateClimateLayer() {
     const { diffusionRate, advectionRate, thunderstormThreshold, mantleHeatFactor } = this.params;
     
-    // 1. 计算温度变化 (扩散 + 对流 + 地幔加热)
     const newTemps = this.grid.map(row => row.map(c => c.temperature));
     
     for (let y = 0; y < this.height; y++) {
@@ -603,52 +395,35 @@ export class SimulationEngine {
         const cell = this.grid[y][x];
         if (!cell.exists) continue;
         
-        // 扩散 (热传导)
+        // 扩散
         const neighbors = this.getNeighbors(x, y);
         const avgTemp = neighbors.reduce((sum, n) => sum + n.temperature, 0) / neighbors.length;
         let newTemp = cell.temperature * (1 - diffusionRate) + avgTemp * diffusionRate;
         
-        // 地幔加热 (地热)
-        // 基础温度 -100度
-        // 地幔能量 (0-100+) 贡献温度，受 mantleHeatFactor (0-200) 控制
-        // 逻辑：Temp = -100 + (MantleEnergy / 100) * MantleHeatFactor
-        // 但为了平滑过渡，我们使用混合更新：
-        // TargetTemp = -100 + (cell.mantleEnergy / 100) * mantleHeatFactor
-        // newTemp = currentTemp * 0.9 + TargetTemp * 0.1 (趋向目标温度)
-        
+        // 地幔加热
         const targetTemp = -100 + (cell.mantleEnergy / 100) * mantleHeatFactor;
-        
-        // 移除之前的累加逻辑，改为趋向目标值，这样更稳定且符合用户要求的"加权得到一个值"
-        // 使用较小的混合系数模拟热容
         newTemp = newTemp * 0.9 + targetTemp * 0.1;
         
-        // 季节性波动 (正弦波)
-        // const season = Math.sin(this.timeStep * 0.01) * this.params.seasonalAmplitude;
-        // newTemp += season * 0.01;
+        // 环境冷却
+        newTemp -= 0.5;
         
         newTemps[y][x] = newTemp;
+        
+        // 雷暴判定
+        const tempDiff = Math.abs(cell.temperature - avgTemp);
+        if (tempDiff > thunderstormThreshold && Math.random() < 0.1) {
+            cell.hasThunderstorm = true;
+        } else {
+            cell.hasThunderstorm = false;
+        }
       }
     }
     
-    // 应用温度并检测雷暴
+    // 应用温度更新
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         if (this.grid[y][x].exists) {
             this.grid[y][x].temperature = newTemps[y][x];
-            
-            // 雷暴生成逻辑
-            // 温度剧烈变化区域容易产生雷暴
-            // 这里简化为：局部温度差异大
-            const neighbors = this.getNeighbors(x, y);
-            let maxDiff = 0;
-            for (const n of neighbors) {
-                maxDiff = Math.max(maxDiff, Math.abs(n.temperature - this.grid[y][x].temperature));
-            }
-            
-            this.grid[y][x].hasThunderstorm = maxDiff > thunderstormThreshold;
-        } else {
-            this.grid[y][x].temperature = 0;
-            this.grid[y][x].hasThunderstorm = false;
         }
       }
     }
@@ -661,20 +436,22 @@ export class SimulationEngine {
         energySharingRate, energySharingLimit, energyDecayRate
     } = this.params;
     
+    const crystalChanges: {x: number, y: number, type: CellType}[] = [];
+
     // 1. 能量获取与消耗
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const cell = this.grid[y][x];
-        if (!cell.exists || cell.crystalState === 'EMPTY' || cell.crystalState === 'HUMAN') continue;
+        if (!cell.exists || cell.crystalState === 'EMPTY' || cell.crystalState === 'BIO') continue;
         
         cell.isAbsorbing = false;
-        cell.crystalEnergy = 0; // 重置当帧能量增益
+        cell.crystalEnergy = 0;
         
         // 吸收地幔能量
         if (cell.mantleEnergy > 10) {
             const absorbed = cell.mantleEnergy * mantleAbsorption;
             cell.storedEnergy += absorbed;
-            cell.crystalEnergy += absorbed; // 用于可视化
+            cell.crystalEnergy += absorbed;
             cell.isAbsorbing = true;
         }
         
@@ -696,12 +473,9 @@ export class SimulationEngine {
         // 能量枯竭
         if (cell.storedEnergy <= 0) {
             if (cell.crystalState === 'ALPHA') {
-                // Alpha 晶石死亡转化为 Beta 晶石 (硬化)
                 cell.crystalState = 'BETA';
-                // Beta 晶石不需要能量维持，但也没有能量
                 cell.storedEnergy = 0;
             } else {
-                // Beta 晶石或其他状态死亡变为空
                 cell.crystalState = 'EMPTY';
                 cell.storedEnergy = 0;
             }
@@ -709,16 +483,13 @@ export class SimulationEngine {
       }
     }
 
-    // 2. 能量共享 (ALPHA 晶石网络) - 迭代式扩散
-    // 清除上一帧的流量记录
+    // 2. 能量共享 (ALPHA 晶石网络)
     for (let y = 0; y < this.height; y++) {
         for (let x = 0; x < this.width; x++) {
             this.grid[y][x].energyFlow = [];
         }
     }
 
-    // 简单的迭代扩散：高能量向低能量流动
-    // 为了避免顺序影响，使用临时数组记录变化
     const energyChanges = Array(this.height).fill(0).map(() => Array(this.width).fill(0));
 
     for (let y = 0; y < this.height; y++) {
@@ -729,31 +500,22 @@ export class SimulationEngine {
             const neighbors = this.getNeighbors(x, y);
             const alphaNeighbors = neighbors.filter(n => n.crystalState === 'ALPHA');
 
-            // 向能量较低的邻居输送能量
             for (const neighbor of alphaNeighbors) {
                 if (cell.storedEnergy > neighbor.storedEnergy) {
                     const diff = cell.storedEnergy - neighbor.storedEnergy;
-                    // 传输量与差异成正比，受 sharingRate 控制
-                    // 同时也受 decayRate 限制（模拟阻力）
                     let transferAmount = diff * 0.1 * energySharingRate; 
                     
-                    // 限制单次传输最大值，防止震荡
                     if (transferAmount > 5) transferAmount = 5;
                     
-                    // 确保自己不会因为传输而低于邻居 (考虑到多对多传输，这里只是简单估算)
                     if (cell.storedEnergy - transferAmount < neighbor.storedEnergy + transferAmount) {
-                        transferAmount = diff * 0.4; // 平分差异
+                        transferAmount = diff * 0.4;
                     }
 
                     if (transferAmount > 0.1) {
-                        // 记录能量变化
                         energyChanges[y][x] -= transferAmount;
-                        
-                        // 接收方收到的能量要扣除衰减
                         const receivedAmount = transferAmount * (1 - energyDecayRate);
                         energyChanges[neighbor.y][neighbor.x] += receivedAmount;
 
-                        // 记录流向用于可视化
                         cell.energyFlow.push({
                             x: neighbor.x,
                             y: neighbor.y,
@@ -765,38 +527,29 @@ export class SimulationEngine {
         }
     }
 
-    // 应用能量共享变化
+    // 应用能量共享
     for (let y = 0; y < this.height; y++) {
         for (let x = 0; x < this.width; x++) {
-            if (this.grid[y][x].crystalState === 'ALPHA') {
-                this.grid[y][x].storedEnergy += energyChanges[y][x];
-                // 再次检查上限和下限
-                if (this.grid[y][x].storedEnergy > maxCrystalEnergy * energySharingLimit) {
-                    this.grid[y][x].storedEnergy = maxCrystalEnergy * energySharingLimit;
-                }
-                if (this.grid[y][x].storedEnergy < 0) {
-                    this.grid[y][x].storedEnergy = 0;
-                }
+            const cell = this.grid[y][x];
+            if (cell.crystalState === 'ALPHA') {
+                cell.storedEnergy += energyChanges[y][x];
+                if (cell.storedEnergy < 0) cell.storedEnergy = 0;
+                if (cell.storedEnergy > maxCrystalEnergy) cell.storedEnergy = maxCrystalEnergy;
             }
         }
     }
-    
+
     // 3. 晶石扩张
-    const crystalChanges: {x: number, y: number, type: CellType}[] = [];
-    
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const cell = this.grid[y][x];
         if (cell.crystalState === 'ALPHA' && cell.storedEnergy > expansionCost * 2) {
-            // 尝试扩张
             const neighbors = this.getNeighbors(x, y);
             const emptyNeighbors = neighbors.filter(n => n.exists && n.crystalState === 'EMPTY');
             
             if (emptyNeighbors.length > 0) {
                 const target = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
                 
-                // 决定生成 Alpha 还是 Beta
-                // 简单逻辑：距离中心越远，越容易生成 Beta
                 const dist = Math.sqrt((target.x - this.width/2)**2 + (target.y - this.height/2)**2);
                 const betaChance = Math.min(0.8, Math.max(0, (dist - 5) / 15));
                 
@@ -812,14 +565,285 @@ export class SimulationEngine {
     // 应用扩张
     for (const change of crystalChanges) {
         const cell = this.grid[change.y][change.x];
-        // 再次检查是否为空 (可能被多个晶石同时选中)
         if (cell.crystalState === 'EMPTY') {
             cell.crystalState = change.type;
-            cell.storedEnergy = 10; // 初始能量
+            cell.storedEnergy = 10;
         }
     }
   }
+
+  updateBioLayer() {
+    const {
+        extinctionBonus, competitionPenalty, mutationRate, mutationStrength, newSpeciesThreshold
+    } = this.params;
+
+    // 1. 检查生物数量
+    let bioCount = 0;
+    for (let y = 0; y < this.height; y++) {
+        for (let x = 0; x < this.width; x++) {
+            if (this.grid[y][x].crystalState === 'BIO') {
+                bioCount++;
+            }
+        }
+    }
+
+    // 2. 处理生物生成/重生逻辑
+    if (bioCount === 0) {
+        if (this.isFirstSpawn) {
+            if (this.timeStep >= 50) {
+                this.spawnBio(100); // 初始生成人类(ID=0)
+                this.isFirstSpawn = false;
+            }
+        } else {
+            if (this.bioExtinctionStep === null) {
+                this.bioExtinctionStep = this.timeStep;
+            }
+            
+            if (this.timeStep - this.bioExtinctionStep >= 20) {
+                this.spawnBio(100);
+                this.bioExtinctionStep = null;
+            }
+        }
+        if (bioCount === 0) return; 
+    } else {
+        this.bioExtinctionStep = null;
+        if (bioCount > 0) this.isFirstSpawn = false;
+    }
+
+    // 3. 更新生物状态
+    const changes: {x: number, y: number, type: 'PROSPERITY' | 'STATE' | 'MIGRATE' | 'MINING_STATE' | 'NEW_BIO', value?: any, toX?: number, toY?: number}[] = [];
+
+    for (let y = 0; y < this.height; y++) {
+        for (let x = 0; x < this.width; x++) {
+            const cell = this.grid[y][x];
+            if (cell.crystalState !== 'BIO' || !cell.bioAttributes) continue;
+
+            const attrs = cell.bioAttributes;
+
+            // A. 温度检查 (生存极限)
+            if (cell.temperature < attrs.survivalMinTemp || cell.temperature > attrs.survivalMaxTemp) {
+                changes.push({x, y, type: 'STATE', value: 0}); // 死亡
+                // 灭绝奖励
+                this.distributeExtinctionBonus(x, y, extinctionBonus);
+                continue;
+            }
+
+            // B. 繁荣度更新
+            let prosperityChange = 0;
+            if (cell.temperature >= attrs.minTemp && cell.temperature <= attrs.maxTemp) {
+                prosperityChange += attrs.prosperityGrowth;
+            } else {
+                prosperityChange -= attrs.prosperityDecay;
+            }
+
+            // 邻居影响
+            const neighbors = this.getNeighbors(x, y);
+            const bioNeighbors = neighbors.filter(n => n.crystalState === 'BIO' && n.bioAttributes);
+            
+            // 同种群加成，异种群惩罚
+            for (const n of bioNeighbors) {
+                if (n.bioAttributes!.speciesId === attrs.speciesId) {
+                    prosperityChange += 0.1;
+                } else {
+                    // 异种群竞争：繁荣度低的受惩罚
+                    if (cell.prosperity < n.prosperity) {
+                        prosperityChange -= competitionPenalty;
+                    }
+                }
+            }
+
+            // Alpha 辐射伤害 (永远大于增长)
+            const alphaNeighbors = neighbors.filter(n => n.crystalState === 'ALPHA');
+            if (alphaNeighbors.length > 0) {
+                // 确保伤害大于最大可能的自然增长
+                const damage = Math.max(attrs.prosperityGrowth + 0.2, this.params.alphaRadiationDamage);
+                prosperityChange -= alphaNeighbors.length * damage;
+            }
+
+            // C. 采矿
+            const betaNeighbors = neighbors.filter(n => n.crystalState === 'BETA');
+            let isMining = false;
+            if (betaNeighbors.length > 0) {
+                const target = betaNeighbors[Math.floor(Math.random() * betaNeighbors.length)];
+                changes.push({x: target.x, y: target.y, type: 'STATE', value: 0});
+                prosperityChange += attrs.miningReward;
+                isMining = true;
+            }
+            
+            changes.push({x, y, type: 'MINING_STATE', value: isMining ? 1 : 0});
+
+            // 应用繁荣度变化
+            const newProsperity = cell.prosperity + prosperityChange;
+            changes.push({x, y, type: 'PROSPERITY', value: newProsperity});
+
+            // D. 死亡判定 (繁荣度 <= 0)
+            if (newProsperity <= 0) {
+                changes.push({x, y, type: 'STATE', value: 0});
+                this.distributeExtinctionBonus(x, y, extinctionBonus);
+                continue;
+            }
+
+            // E. 扩张与变异
+            if (newProsperity > attrs.expansionThreshold) {
+                const emptyNeighbors = neighbors.filter(n => n.exists && n.crystalState === 'EMPTY');
+                if (emptyNeighbors.length > 0) {
+                    const target = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
+                    
+                    // 变异逻辑
+                    let newAttrs = {...attrs};
+                    let isNewSpecies = false;
+                    
+                    // 随机变异属性
+                    const keys: (keyof BioAttributes)[] = ['minTemp', 'maxTemp', 'prosperityGrowth', 'prosperityDecay', 'expansionThreshold', 'miningReward', 'migrationThreshold'];
+                    
+                    for (const key of keys) {
+                        if (Math.random() < mutationRate) {
+                            const val = newAttrs[key] as number;
+                            const change = val * mutationStrength * (Math.random() > 0.5 ? 1 : -1);
+                            (newAttrs[key] as number) += change;
+                            
+                            // 检查是否成为新物种
+                            if (Math.abs(change) > Math.abs(val) * newSpeciesThreshold) {
+                                isNewSpecies = true;
+                            }
+                        }
+                    }
+                    
+                    if (isNewSpecies) {
+                        newAttrs.speciesId = Math.floor(Math.random() * 100000);
+                        newAttrs.color = `hsl(${Math.random() * 360}, 70%, 50%)`;
+                    }
+                    
+                    changes.push({
+                        x: target.x, 
+                        y: target.y, 
+                        type: 'NEW_BIO', 
+                        value: { prosperity: 30, attrs: newAttrs }
+                    });
+                    
+                    changes.push({x, y, type: 'PROSPERITY', value: newProsperity - 30});
+                }
+            }
+            
+            // F. 迁移
+            if (newProsperity < attrs.migrationThreshold) {
+                const emptyNeighbors = neighbors.filter(n => n.exists && n.crystalState === 'EMPTY');
+                if (emptyNeighbors.length > 0) {
+                    // 寻找温度最适宜的邻居
+                    let bestTarget = emptyNeighbors[0];
+                    let minTempDiff = Math.abs(bestTarget.temperature - (attrs.minTemp + attrs.maxTemp)/2);
+                    
+                    for (const n of emptyNeighbors) {
+                        const diff = Math.abs(n.temperature - (attrs.minTemp + attrs.maxTemp)/2);
+                        if (diff < minTempDiff) {
+                            minTempDiff = diff;
+                            bestTarget = n;
+                        }
+                    }
+                    
+                    changes.push({x: bestTarget.x, y: bestTarget.y, type: 'MIGRATE', value: {prosperity: newProsperity, attrs}, toX: x, toY: y});
+                    changes.push({x, y, type: 'STATE', value: 0});
+                }
+            }
+        }
+    }
+
+    // 应用生物层变化
+    for (const change of changes) {
+        const cell = this.grid[change.y][change.x];
+        
+        if (change.type === 'STATE') {
+            if (change.value === 0) {
+                cell.crystalState = 'EMPTY';
+                cell.prosperity = 0;
+                cell.bioAttributes = undefined;
+            }
+        } else if (change.type === 'PROSPERITY') {
+            cell.prosperity = change.value;
+        } else if (change.type === 'MINING_STATE') {
+            cell.isMining = change.value === 1;
+        } else if (change.type === 'NEW_BIO') {
+            if (cell.crystalState === 'EMPTY') {
+                cell.crystalState = 'BIO';
+                cell.prosperity = change.value.prosperity;
+                cell.bioAttributes = change.value.attrs;
+            }
+        } else if (change.type === 'MIGRATE') {
+            if (cell.crystalState === 'EMPTY') {
+                cell.crystalState = 'BIO';
+                cell.prosperity = change.value.prosperity;
+                cell.bioAttributes = change.value.attrs;
+            }
+        }
+    }
+  }
+
+  distributeExtinctionBonus(x: number, y: number, bonus: number) {
+      const neighbors = this.getNeighbors(x, y);
+      for (const n of neighbors) {
+          if (n.crystalState === 'ALPHA' || n.crystalState === 'BETA') {
+              n.storedEnergy += bonus;
+          } else if (n.crystalState === 'BIO') {
+              n.prosperity += bonus;
+          }
+      }
+  }
+
+  spawnBio(prosperity: number) {
+    const { humanSpawnPoint } = this.params;
+    let targetX = -1, targetY = -1;
+
+    if (humanSpawnPoint) {
+        targetX = humanSpawnPoint.x;
+        targetY = humanSpawnPoint.y;
+    } else {
+        // 寻找适宜区域
+        const candidates: Cell[] = [];
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                const cell = this.grid[y][x];
+                if (cell.exists && cell.crystalState === 'EMPTY') {
+                    const temp = cell.temperature;
+                    if (temp >= this.params.humanMinTemp && temp <= this.params.humanMaxTemp) {
+                        candidates.push(cell);
+                    }
+                }
+            }
+        }
+        
+        if (candidates.length > 0) {
+            const target = candidates[Math.floor(Math.random() * candidates.length)];
+            targetX = target.x;
+            targetY = target.y;
+        }
+    }
+
+    if (targetX !== -1 && this.grid[targetY][targetX].crystalState === 'EMPTY') {
+        const cell = this.grid[targetY][targetX];
+        cell.crystalState = 'BIO';
+        cell.prosperity = prosperity;
+        // 初始生物为人类
+        cell.bioAttributes = {
+            minTemp: this.params.humanMinTemp,
+            maxTemp: this.params.humanMaxTemp,
+            survivalMinTemp: this.params.humanSurvivalMinTemp,
+            survivalMaxTemp: this.params.humanSurvivalMaxTemp,
+            prosperityGrowth: this.params.humanProsperityGrowth,
+            prosperityDecay: this.params.humanProsperityDecay,
+            expansionThreshold: this.params.humanExpansionThreshold,
+            miningReward: this.params.humanMiningReward,
+            migrationThreshold: this.params.humanMigrationThreshold,
+            alphaRadiationDamage: this.params.alphaRadiationDamage,
+            speciesId: 0, // 0 代表人类
+            color: '#FFA500' // 橙色
+        };
+    }
+  }
   
+  spawnHuman(prosperity: number) {
+      this.spawnBio(prosperity);
+  }
+
   getNeighbors(x: number, y: number, includeVoid: boolean = false): Cell[] {
     const neighbors: Cell[] = [];
     const dirs = [

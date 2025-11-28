@@ -53,11 +53,18 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   humanExpansionThreshold: { desc: "触发扩张所需的繁荣度阈值", impact: "高: 难以扩张 / 低: 容易扩张" },
   humanMiningReward: { desc: "开采Beta晶石获得的繁荣度奖励", impact: "高: 采矿收益大 / 低: 采矿收益小" },
   humanMigrationThreshold: { desc: "触发迁移的繁荣度阈值", impact: "高: 容易迁移 / 低: 坚守原地" },
-  humanDeathThreshold: { desc: "人类灭亡的繁荣度阈值", impact: "繁荣度低于此值时聚落消失" },
+
   alphaRadiationDamage: { desc: "Alpha辐射伤害", impact: "Alpha晶石对周围人类造成的繁荣度持续伤害" },
   humanSpawnPoint: { desc: "人类重生点坐标", impact: "人类灭绝后重新生成的固定位置" },
   energySharingLimit: { desc: "晶石能量共享上限", impact: "限制单次共享的最大能量值" },
   energyDecayRate: { desc: "能量传输衰减率", impact: "高: 能量传输距离短 / 低: 能量传输距离长" },
+  
+  // 生物通用参数
+  extinctionBonus: { desc: "灭绝能量奖励", impact: "生物灭绝时释放给周围的能量/繁荣度" },
+  competitionPenalty: { desc: "种群竞争惩罚", impact: "异种群相邻时，繁荣度较低者的惩罚值" },
+  mutationRate: { desc: "变异概率", impact: "新生物产生变异的可能性" },
+  mutationStrength: { desc: "变异强度", impact: "变异时属性变化的幅度" },
+  newSpeciesThreshold: { desc: "新物种阈值", impact: "属性变化超过此比例时判定为新物种" },
 };
 
 export default function Home() {
@@ -386,16 +393,20 @@ export default function Home() {
             
             ctx.fillRect(px, py, cellSize, cellSize);
         } else if (activeLayer === 'human') {
-            // Human Layer Visualization
-            if (cell.crystalState === 'HUMAN') {
-                // Prosperity: Orange -> White
-                const intensity = Math.min(1, cell.prosperity / 100);
-                ctx.fillStyle = `rgb(255, ${165 + (255-165)*intensity}, ${intensity * 255})`;
+            // Bio Layer Visualization
+            if (cell.crystalState === 'BIO' && cell.bioAttributes) {
+                // 使用生物种群颜色
+                ctx.fillStyle = cell.bioAttributes.color;
                 ctx.fillRect(px, py, cellSize, cellSize);
+                
+                // 繁荣度指示：中心亮度
+                const intensity = Math.min(1, cell.prosperity / 100);
+                ctx.fillStyle = `rgba(255, 255, 255, ${intensity * 0.5})`;
+                ctx.fillRect(px + cellSize*0.25, py + cellSize*0.25, cellSize*0.5, cellSize*0.5);
             } else {
                 // Background: Temperature suitability (Subtle)
-                // Ideal (35°C) -> Greenish tint
-                const idealTemp = 35;
+                // Ideal (20°C) -> Greenish tint
+                const idealTemp = 20;
                 const diff = Math.abs(cell.temperature - idealTemp);
                 if (diff < 10) {
                     ctx.fillStyle = `rgba(34, 197, 94, ${0.1 * (1 - diff/10)})`; // Green-500 with low opacity
@@ -435,10 +446,19 @@ export default function Home() {
             } else if (cell.crystalState === 'BETA') {
                 ctx.fillStyle = '#64748b';
                 ctx.fillRect(px, py, cellSize, cellSize);
-            } else if (cell.crystalState === 'HUMAN') {
-                // Human Settlements: Orange
-                ctx.fillStyle = '#f97316'; // Orange-500
+            } else if (cell.crystalState === 'BIO' && cell.bioAttributes) {
+                // Bio Settlements: Species Color
+                ctx.fillStyle = cell.bioAttributes.color;
                 ctx.fillRect(px, py, cellSize, cellSize);
+                
+                // 字母标记
+                ctx.fillStyle = '#fff';
+                ctx.font = `${Math.max(8, cellSize * 0.8)}px monospace`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                // 使用 speciesId 生成一个字母 (A-Z)
+                const charCode = 65 + (cell.bioAttributes.speciesId % 26);
+                ctx.fillText(String.fromCharCode(charCode), px + cellSize/2, py + cellSize/2);
             }
             
             // Thunderstorm overlay
@@ -807,8 +827,17 @@ export default function Home() {
                   <ParamControl label="扩张阈值" paramKey="humanExpansionThreshold" min={10} max={200} step={5} />
                   <ParamControl label="采矿奖励" paramKey="humanMiningReward" min={0} max={100} step={1} />
                   <ParamControl label="迁移阈值" paramKey="humanMigrationThreshold" min={0} max={100} step={1} />
-                  <ParamControl label="灭亡阈值" paramKey="humanDeathThreshold" min={0} max={50} step={1} />
+
                   <ParamControl label="Alpha辐射伤害" paramKey="alphaRadiationDamage" min={0} max={20} step={0.5} />
+                </div>
+                
+                <div className="space-y-4 pt-4 border-t border-border">
+                  <h3 className="text-sm font-medium text-muted-foreground">生物演化参数</h3>
+                  <ParamControl label="灭绝奖励" paramKey="extinctionBonus" min={0} max={200} step={5} />
+                  <ParamControl label="竞争惩罚" paramKey="competitionPenalty" min={0} max={20} step={0.5} />
+                  <ParamControl label="变异概率" paramKey="mutationRate" min={0} max={1} step={0.01} />
+                  <ParamControl label="变异强度" paramKey="mutationStrength" min={0} max={1} step={0.01} />
+                  <ParamControl label="新物种阈值" paramKey="newSpeciesThreshold" min={0} max={1} step={0.05} />
                 </div>
             </TabsContent>
           </Tabs>
