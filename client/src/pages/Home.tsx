@@ -37,6 +37,7 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   harvestThreshold: { desc: "采集阈值 (自动模拟中未使用)", impact: "N/A" },
   edgeGenerationWidth: { desc: "边缘能量生成的宽度范围（格数）", impact: "高：边缘生成范围更广 / 低：仅在紧邻边缘处生成" },
   edgeGenerationEnergy: { desc: "边缘每格每次迭代生成的能量值", impact: "高：边缘快速扩张 / 低：边缘扩张缓慢" },
+  edgeGenerationOffset: { desc: "边缘能量生成的起始偏移（从边缘第几层开始）", impact: "高：能量生成更靠内 / 低：能量生成紧贴边缘" },
   edgeSupplyPointCount: { desc: "边缘能量供给点的数量", impact: "高：多点供给 / 低：少点供给" },
   edgeSupplyPointSpeed: { desc: "边缘供给点的迁移速度", impact: "高：供给点移动快 / 低：供给点移动慢" },
 };
@@ -334,33 +335,44 @@ export default function Home() {
             }
             else if (cell.crystalState === 'BETA') ctx.fillStyle = '#64748b'; // Slate
             else ctx.fillStyle = '#404040'; // Empty ground
-        } else {
+               } else {
             // Combined View
-            // Base: Mantle (Dark)
+            // Base: Ground (Dark Grey)
+            // Overlay: Transparent Mantle (Red/Yellow)
             // Overlay: Crystal
             // Overlay: Thunderstorm
             
-            // Ground
-            const groundIntensity = 30 + (cell.mantleEnergy / 100) * 30;
-            ctx.fillStyle = `rgb(${groundIntensity}, ${groundIntensity}, ${groundIntensity})`;
+            // Ground Base
+            ctx.fillStyle = '#2a2a2a';
+            ctx.fillRect(px, py, cellSize, cellSize);
+
+            // Transparent Mantle Overlay
+            const mantleIntensity = Math.min(1, cell.mantleEnergy / 150); // Normalize to 0-1
+            if (mantleIntensity > 0.1) {
+                // Red-ish glow for mantle energy
+                ctx.fillStyle = `rgba(255, ${mantleIntensity * 100}, 0, ${mantleIntensity * 0.4})`;
+                ctx.fillRect(px, py, cellSize, cellSize);
+            }
             
+            // Crystal
             if (cell.crystalState === 'ALPHA') {
                 ctx.fillStyle = '#10b981';
                 // 能量吸收视觉效果：白色边框
                 if (cell.isAbsorbing) {
-                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-                    ctx.lineWidth = 1;
-                    ctx.strokeRect(px + 1, py + 1, cellSize - 2, cellSize - 2);
+                    ctx.fillStyle = '#34d399';
                 }
+                ctx.fillRect(px, py, cellSize, cellSize);
+            } else if (cell.crystalState === 'BETA') {
+                ctx.fillStyle = '#64748b';
+                ctx.fillRect(px, py, cellSize, cellSize);
             }
-            else if (cell.crystalState === 'BETA') ctx.fillStyle = '#64748b';
             
+            // Thunderstorm overlay
             if (cell.hasThunderstorm) {
-                ctx.fillStyle = 'rgba(251, 191, 36, 0.5)'; // Semi-transparent amber
+                ctx.fillStyle = 'rgba(251, 191, 36, 0.4)'; // Amber with opacity
+                ctx.fillRect(px, py, cellSize, cellSize);
             }
         }
-        
-        ctx.fillRect(px, py, cellSize, cellSize);
       }
     }
     
@@ -612,6 +624,7 @@ export default function Home() {
                 <ParamControl label="最小半径" paramKey="minRadius" min={0} max={20} step={1} />
                 <ParamControl label="扭曲速度" paramKey="distortionSpeed" min={0} max={0.05} step={0.001} />
                 <ParamControl label="边缘生成宽度" paramKey="edgeGenerationWidth" min={0} max={5} step={1} />
+                <ParamControl label="边缘生成偏移" paramKey="edgeGenerationOffset" min={0} max={10} step={1} />
                 <ParamControl label="边缘生成能量" paramKey="edgeGenerationEnergy" min={0} max={10} step={0.1} />
                 <ParamControl label="供给点数量(需重启)" paramKey="edgeSupplyPointCount" min={1} max={10} step={1} />
                 <ParamControl label="供给点迁移速度" paramKey="edgeSupplyPointSpeed" min={0} max={0.5} step={0.01} />

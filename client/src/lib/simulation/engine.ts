@@ -38,6 +38,7 @@ export interface SimulationParams {
   distortionSpeed: number;
   edgeGenerationWidth: number;
   edgeGenerationEnergy: number; // 噪声扭曲速度
+  edgeGenerationOffset: number; // 边缘生成偏移（从边缘第几层开始）
   edgeSupplyPointCount: number; // 边缘供给点数量
   edgeSupplyPointSpeed: number; // 边缘供给点迁移速度
   
@@ -68,6 +69,7 @@ export const DEFAULT_PARAMS: SimulationParams = {
   distortionSpeed: 0.01,
   edgeGenerationWidth: 2,
   edgeGenerationEnergy: 10,
+  edgeGenerationOffset: 0,
   edgeSupplyPointCount: 3,
   edgeSupplyPointSpeed: 0.05,
   
@@ -260,7 +262,7 @@ export class SimulationEngine {
     }
     
     // 边缘能量生成机制 (随机迁移点供给)
-    const { edgeGenerationWidth, edgeGenerationEnergy, edgeSupplyPointSpeed } = this.params;
+    const { edgeGenerationWidth, edgeGenerationEnergy, edgeGenerationOffset, edgeSupplyPointSpeed } = this.params;
     
     // 更新供给点位置
     this.edgeSupplyPoints.forEach(point => {
@@ -292,19 +294,60 @@ export class SimulationEngine {
           return density;
         };
 
+        // 计算每个点到最近边缘的距离（BFS）
+        const distToEdge = Array(this.height).fill(0).map(() => Array(this.width).fill(Infinity));
+        const queue: {x: number, y: number, dist: number}[] = [];
+
+        // 初始化：找到所有直接边缘点（距离为0）
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
                 const cell = this.grid[y][x];
                 if (!cell.exists) continue;
 
-                // 检查是否在边缘
-                let isEdge = false;
                 const neighbors = this.getNeighbors(x, y);
+                // 如果有不存在的邻居，或者是地图边界，则是边缘
                 if (neighbors.some(n => !n.exists) || neighbors.length < 8) {
-                    isEdge = true;
+                    distToEdge[y][x] = 0;
+                    queue.push({x, y, dist: 0});
                 }
+            }
+        }
 
-                if (isEdge) {
+        // BFS 扩散距离
+        let head = 0;
+        while(head < queue.length) {
+            const {x, y, dist} = queue[head++];
+            
+            // 如果距离已经超过需要的最大范围（offset + width），可以停止扩散该分支
+            // 但为了准确性，我们通常计算全图或足够大的范围
+            // 这里优化：只计算到 offset + width + 1
+            const maxDist = (edgeGenerationOffset || 0) + (edgeGenerationWidth || 2) + 1;
+            if (dist >= maxDist) continue;
+
+            const neighbors = this.getNeighbors(x, y);
+            for (const n of neighbors) {
+                if (n.exists && distToEdge[n.y][n.x] === Infinity) {
+                    distToEdge[n.y][n.x] = dist + 1;
+                    queue.push({x: n.x, y: n.y, dist: dist + 1});
+                }
+            }
+        }
+
+        // 应用能量
+        const offset = edgeGenerationOffset || 0;
+        const width = edgeGenerationWidth || 2;
+
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                const cell = this.grid[y][x];
+                if (!cell.exists) continue;
+
+                const dist = distToEdge[y][x];
+                
+                // 判断是否在生成范围内：[offset, offset + width)
+                // 例如 offset=0, width=2 => dist 0, 1
+                // offset=1, width=2 => dist 1, 2
+                if (dist >= offset && dist < offset + width) {
                     // 计算当前点的角度
                     const dx = x - centerX;
                     const dy = y - centerY;
