@@ -54,6 +54,7 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   humanMigrationThreshold: { desc: "触发迁移的繁荣度阈值", impact: "高: 容易迁移 / 低: 坚守原地" },
   humanSpawnPoint: { desc: "人类重生点坐标", impact: "人类灭绝后重新生成的固定位置" },
   energySharingLimit: { desc: "晶石能量共享上限", impact: "限制单次共享的最大能量值" },
+  energyDecayRate: { desc: "能量传输衰减率", impact: "高: 能量传输距离短 / 低: 能量传输距离长" },
 };
 
 export default function Home() {
