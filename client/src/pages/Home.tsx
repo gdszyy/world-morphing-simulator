@@ -66,6 +66,7 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   mutationStrength: { desc: "变异强度", impact: "变异时属性变化的幅度" },
   newSpeciesThreshold: { desc: "新物种阈值", impact: "属性变化超过此比例时判定为新物种" },
   minProsperityGrowth: { desc: "非人类生物最小增长", impact: "确保随机生成的生物具有最低生存能力" },
+  sameSpeciesBonus: { desc: "同种群加成", impact: "相同种群邻居提供的繁荣度加成" },
 };
 
 export default function Home() {
@@ -471,9 +472,15 @@ export default function Home() {
                 ctx.font = `${Math.max(8, cellSize * 0.8)}px monospace`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                // 使用 speciesId 生成一个字母 (A-Z)
-                const charCode = 65 + (cell.bioAttributes.speciesId % 26);
-                ctx.fillText(String.fromCharCode(charCode), px + cellSize/2, py + cellSize/2);
+                
+                if (cell.bioAttributes.speciesId === 0) {
+                    // 人类特殊标记 'X'
+                    ctx.fillText('X', px + cellSize/2, py + cellSize/2);
+                } else {
+                    // 其他物种使用 A-Z
+                    const charCode = 65 + (cell.bioAttributes.speciesId % 26);
+                    ctx.fillText(String.fromCharCode(charCode), px + cellSize/2, py + cellSize/2);
+                }
             }
             
             // Thunderstorm overlay
@@ -919,6 +926,7 @@ export default function Home() {
                   <ParamControl label="变异强度" paramKey="mutationStrength" min={0} max={1} step={0.01} />
                   <ParamControl label="新物种阈值" paramKey="newSpeciesThreshold" min={0} max={1} step={0.05} />
                   <ParamControl label="最小增长" paramKey="minProsperityGrowth" min={0} max={20} step={0.5} />
+                  <ParamControl label="同种群加成" paramKey="sameSpeciesBonus" min={0} max={10} step={0.1} />
                 </div>
             </TabsContent>
           </Tabs>

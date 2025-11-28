@@ -89,6 +89,7 @@ export interface SimulationParams {
   mutationStrength: number; // 变异强度 (0-1)
   newSpeciesThreshold: number; // 成为新物种的变异阈值 (0.2)
   minProsperityGrowth: number; // 非人类生物的最小繁荣度增长值
+  sameSpeciesBonus: number; // 相同种群邻居提供的繁荣度加成
   
   // 人类初始参数 (作为默认生物模板)
   humanMinTemp: number;
@@ -145,6 +146,7 @@ export const DEFAULT_PARAMS: SimulationParams = {
   mutationStrength: 0.1,
   newSpeciesThreshold: 0.2,
   minProsperityGrowth: 5,
+  sameSpeciesBonus: 0.5, // 默认值
 
   // 人类层 (默认生物)
   humanMinTemp: 7,
@@ -589,13 +591,17 @@ export class SimulationEngine {
 
     // 2. 处理生物生成/重生逻辑
     
-    // 统计当前物种数量
+    // 统计当前物种数量和人类是否存在
     const speciesSet = new Set<number>();
+    let humanExists = false;
     for (let y = 0; y < this.height; y++) {
         for (let x = 0; x < this.width; x++) {
             const cell = this.grid[y][x];
             if (cell.crystalState === 'BIO' && cell.bioAttributes) {
                 speciesSet.add(cell.bioAttributes.speciesId);
+                if (cell.bioAttributes.speciesId === 0) {
+                    humanExists = true;
+                }
             }
         }
     }
@@ -605,10 +611,11 @@ export class SimulationEngine {
         this.spawnRandomSpecies();
     }
 
-    if (bioCount === 0) {
+    // 人类重生逻辑：如果人类不存在，且满足重生条件，则重生人类
+    if (!humanExists) {
         if (this.isFirstSpawn) {
             if (this.timeStep >= 50) {
-                this.spawnBio(100); // 初始生成人类(ID=0)
+                this.spawnHuman(100); // 初始生成人类(ID=0)
                 this.isFirstSpawn = false;
             }
         } else {
@@ -617,14 +624,13 @@ export class SimulationEngine {
             }
             
             if (this.timeStep - this.bioExtinctionStep >= 20) {
-                this.spawnBio(100);
+                this.spawnHuman(100);
                 this.bioExtinctionStep = null;
             }
         }
-        if (bioCount === 0) return; 
     } else {
         this.bioExtinctionStep = null;
-        if (bioCount > 0) this.isFirstSpawn = false;
+        this.isFirstSpawn = false;
     }
 
     // 3. 更新生物状态
@@ -665,9 +671,9 @@ export class SimulationEngine {
             // 同种群加成，异种群惩罚
             for (const n of bioNeighbors) {
                 if (n.bioAttributes!.speciesId === attrs.speciesId) {
-                    prosperityChange += 0.1;
+                    prosperityChange += this.params.sameSpeciesBonus;
                 } else {
-                    // 异种群竞争：繁荣度低的受惩罚
+                    // 竞争：繁荣度低的一方受到惩罚
                     if (cell.prosperity < n.prosperity) {
                         prosperityChange -= competitionPenalty;
                     }
