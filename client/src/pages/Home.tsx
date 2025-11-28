@@ -10,27 +10,28 @@ import * as d3 from "d3";
 import { HelpCircle, Pause, Play, RefreshCw, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-// Parameter Descriptions
+// 参数说明 (汉化)
 const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string }> = {
-  mantleTimeScale: { desc: "Speed of mantle energy change over time", impact: "High: Fast terrain changes / Low: Stable terrain" },
-  expansionThreshold: { desc: "Energy required to expand terrain", impact: "High: Harder to expand / Low: Rapid expansion" },
-  shrinkThreshold: { desc: "Negative energy required to shrink terrain", impact: "High: Harder to shrink / Low: Rapid shrinking" },
-  depletionRate: { desc: "Rate at which mantle energy decays per cycle", impact: "High: Fast world death / Low: Long-lasting world" },
-  maxRadius: { desc: "Maximum radius for terrain expansion", impact: "High: Larger map / Low: Smaller map" },
-  minRadius: { desc: "Minimum radius for terrain shrinking", impact: "High: Larger core / Low: Smaller core" },
+  mantleTimeScale: { desc: "地幔能量随时间变化的速度", impact: "高: 地形变化快 / 低: 地形稳定" },
+  expansionThreshold: { desc: "地形扩张所需的能量阈值", impact: "高: 难以扩张 / 低: 快速扩张" },
+  shrinkThreshold: { desc: "地形缩减所需的负能量阈值", impact: "高: 难以缩减 / 低: 快速缩减" },
+  depletionRate: { desc: "地幔能量每循环的衰减率", impact: "高: 世界快速死亡 / 低: 世界持久" },
+  maxRadius: { desc: "地形扩张的最大半径限制", impact: "高: 地图更大 / 低: 地图更小" },
+  minRadius: { desc: "地形缩减的最小半径限制", impact: "高: 核心区域更大 / 低: 核心区域更小" },
+  rotationSpeed: { desc: "地幔能量场的旋转速度", impact: "高: 能量场快速旋转 / 低: 能量场缓慢旋转" },
   
-  diffusionRate: { desc: "Speed of temperature spread", impact: "High: Uniform temp / Low: High gradients" },
-  advectionRate: { desc: "Speed of temperature flow along gradients", impact: "High: Fast weather movement / Low: Static weather" },
-  thunderstormThreshold: { desc: "Temp difference required for thunder", impact: "High: Fewer storms / Low: More storms" },
-  seasonalAmplitude: { desc: "Strength of seasonal temp changes", impact: "High: Extreme seasons / Low: Mild seasons" },
+  diffusionRate: { desc: "温度扩散速度", impact: "高: 温度均匀 / 低: 温差大" },
+  advectionRate: { desc: "温度沿梯度流动的速度", impact: "高: 气候移动快 / 低: 气候静止" },
+  thunderstormThreshold: { desc: "触发雷暴所需的温差阈值", impact: "高: 雷暴少 / 低: 雷暴多" },
+  seasonalAmplitude: { desc: "季节性温度变化的幅度", impact: "高: 季节极端 / 低: 季节温和" },
   
-  alphaEnergyDemand: { desc: "Energy needed for Alpha crystal survival", impact: "High: Hard to survive / Low: Easy growth" },
-  betaEnergyDemand: { desc: "Energy needed for Beta crystal (unused)", impact: "N/A" },
-  mantleAbsorption: { desc: "Efficiency of absorbing mantle energy", impact: "High: Fast growth / Low: Slow growth" },
-  thunderstormEnergy: { desc: "Bonus energy from thunderstorms", impact: "High: Storms boost growth / Low: Storms less effective" },
-  invasionThreshold: { desc: "Neighbors needed to invade empty space", impact: "High: Slow expansion / Low: Fast expansion" },
-  invasionEnergyFactor: { desc: "Energy multiplier for invasion", impact: "High: Harder to invade / Low: Easier to invade" },
-  harvestThreshold: { desc: "Harvest threshold (unused in auto-sim)", impact: "N/A" },
+  alphaEnergyDemand: { desc: "Alpha晶石生存所需能量", impact: "高: 难以生存 / 低: 容易生长" },
+  betaEnergyDemand: { desc: "Beta晶石所需能量 (未使用)", impact: "N/A" },
+  mantleAbsorption: { desc: "吸收地幔能量的效率", impact: "高: 生长快 / 低: 生长慢" },
+  thunderstormEnergy: { desc: "雷暴提供的额外能量", impact: "高: 雷暴促进生长 / 低: 雷暴影响小" },
+  invasionThreshold: { desc: "入侵空地所需的邻居数量", impact: "高: 扩张慢 / 低: 扩张快" },
+  invasionEnergyFactor: { desc: "入侵所需的能量倍率", impact: "高: 难以入侵 / 低: 容易入侵" },
+  harvestThreshold: { desc: "采集阈值 (自动模拟中未使用)", impact: "N/A" },
 };
 
 export default function Home() {
@@ -237,11 +238,11 @@ export default function Home() {
       {/* Header / Toolbar */}
       <header className="h-14 border-b border-neutral-800 flex items-center px-4 justify-between bg-neutral-900 shrink-0">
         <div className="flex items-center gap-4">
-          <h1 className="font-bold text-neutral-100">World Morphing Sim</h1>
+          <h1 className="font-bold text-neutral-100">世界变迁模拟器</h1>
           <div className="h-6 w-px bg-neutral-800" />
           <div className="flex items-center gap-2 text-xs text-neutral-400">
-            <span>Step: <span className="text-neutral-100 w-12 inline-block">{stats.timeStep}</span></span>
-            <span>Cycle: <span className="text-neutral-100 w-8 inline-block">{stats.cycle}</span></span>
+            <span>步数: <span className="text-neutral-100 w-12 inline-block">{stats.timeStep}</span></span>
+            <span>循环: <span className="text-neutral-100 w-8 inline-block">{stats.cycle}</span></span>
             <span>FPS: <span className="text-neutral-100 w-8 inline-block">{stats.fps}</span></span>
           </div>
         </div>
@@ -254,24 +255,24 @@ export default function Home() {
             className="w-24"
           >
             {isPlaying ? <Pause className="w-4 h-4 mr-2" /> : <Play className="w-4 h-4 mr-2" />}
-            {isPlaying ? "Pause" : "Play"}
+            {isPlaying ? "暂停" : "播放"}
           </Button>
           
           <Dialog open={isRestartOpen} onOpenChange={setIsRestartOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm">
                 <RefreshCw className="w-4 h-4 mr-2" />
-                Restart
+                重启
               </Button>
             </DialogTrigger>
             <DialogContent className="bg-neutral-900 border-neutral-800 text-neutral-200">
               <DialogHeader>
-                <DialogTitle>Restart Simulation</DialogTitle>
+                <DialogTitle>重启模拟</DialogTitle>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Width</Label>
+                    <Label>宽度</Label>
                     <Input 
                       type="number" 
                       value={mapSize.width} 
@@ -280,7 +281,7 @@ export default function Home() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Height</Label>
+                    <Label>高度</Label>
                     <Input 
                       type="number" 
                       value={mapSize.height} 
@@ -289,7 +290,7 @@ export default function Home() {
                     />
                   </div>
                 </div>
-                <Button onClick={handleRestart}>Confirm Restart</Button>
+                <Button onClick={handleRestart}>确认重启</Button>
               </div>
             </DialogContent>
           </Dialog>
@@ -301,66 +302,66 @@ export default function Home() {
         <aside className="w-80 border-r border-neutral-800 bg-neutral-900 flex flex-col shrink-0">
           <Tabs defaultValue="layers" className="flex-1 flex flex-col">
             <TabsList className="w-full bg-neutral-950 rounded-none border-b border-neutral-800 p-0 h-10">
-              <TabsTrigger value="layers" className="flex-1 rounded-none data-[state=active]:bg-neutral-900 data-[state=active]:text-neutral-100 border-b-2 border-transparent data-[state=active]:border-blue-500">Layers</TabsTrigger>
-              <TabsTrigger value="params" className="flex-1 rounded-none data-[state=active]:bg-neutral-900 data-[state=active]:text-neutral-100 border-b-2 border-transparent data-[state=active]:border-blue-500">Params</TabsTrigger>
+              <TabsTrigger value="layers" className="flex-1 rounded-none data-[state=active]:bg-neutral-900 data-[state=active]:text-neutral-100 border-b-2 border-transparent data-[state=active]:border-blue-500">图层</TabsTrigger>
+              <TabsTrigger value="params" className="flex-1 rounded-none data-[state=active]:bg-neutral-900 data-[state=active]:text-neutral-100 border-b-2 border-transparent data-[state=active]:border-blue-500">参数</TabsTrigger>
             </TabsList>
             
             <TabsContent value="layers" className="flex-1 p-4 space-y-4 overflow-y-auto">
               <div className="space-y-2">
-                <Label className="text-xs uppercase text-neutral-500 font-bold">View Mode</Label>
+                <Label className="text-xs uppercase text-neutral-500 font-bold">视图模式</Label>
                 <div className="grid grid-cols-2 gap-2">
                   <Button 
                     variant={activeLayer === 'combined' ? 'default' : 'outline'} 
                     onClick={() => setActiveLayer('combined')}
                     className="justify-start"
                   >
-                    Combined
+                    综合视图
                   </Button>
                   <Button 
                     variant={activeLayer === 'mantle' ? 'default' : 'outline'} 
                     onClick={() => setActiveLayer('mantle')}
                     className="justify-start text-red-400 border-red-900/30 hover:bg-red-900/20"
                   >
-                    Mantle
+                    地幔层
                   </Button>
                   <Button 
                     variant={activeLayer === 'climate' ? 'default' : 'outline'} 
                     onClick={() => setActiveLayer('climate')}
                     className="justify-start text-blue-400 border-blue-900/30 hover:bg-blue-900/20"
                   >
-                    Climate
+                    气候层
                   </Button>
                   <Button 
                     variant={activeLayer === 'crystal' ? 'default' : 'outline'} 
                     onClick={() => setActiveLayer('crystal')}
                     className="justify-start text-emerald-400 border-emerald-900/30 hover:bg-emerald-900/20"
                   >
-                    Crystal
+                    晶石层
                   </Button>
                 </div>
               </div>
               
               <div className="p-4 bg-neutral-950 rounded border border-neutral-800 text-xs space-y-2">
-                <div className="font-bold text-neutral-400">Legend</div>
+                <div className="font-bold text-neutral-400">图例</div>
                 {activeLayer === 'combined' && (
                   <>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500"></div> Alpha Crystal</div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-slate-500"></div> Beta Crystal</div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-500/50"></div> Thunderstorm</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-emerald-500"></div> Alpha 晶石</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-slate-500"></div> Beta 晶石</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-500/50"></div> 雷暴区域</div>
                   </>
                 )}
                 {activeLayer === 'mantle' && (
                   <>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-600"></div> High Energy</div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-900"></div> Low Energy</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-600"></div> 高能量</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-900"></div> 低能量</div>
                   </>
                 )}
                 {activeLayer === 'climate' && (
                   <>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-500"></div> Hot (&gt;25°C)</div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-white"></div> Neutral (0°C)</div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-blue-500"></div> Cold (&lt;-25°C)</div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-500"></div> Thunderstorm</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-500"></div> 炎热 (&gt;25°C)</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-white"></div> 适宜 (0°C)</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-blue-500"></div> 寒冷 (&lt;-25°C)</div>
+                    <div className="flex items-center gap-2"><div className="w-3 h-3 bg-amber-500"></div> 雷暴区域</div>
                   </>
                 )}
               </div>
@@ -369,30 +370,31 @@ export default function Home() {
             <TabsContent value="params" className="flex-1 p-4 space-y-6 overflow-y-auto">
               <div className="flex justify-end">
                   <Button variant="ghost" size="sm" onClick={resetParams} className="text-xs h-6">
-                      <RotateCcw className="w-3 h-3 mr-1" /> Reset Defaults
+                      <RotateCcw className="w-3 h-3 mr-1" /> 恢复默认
                   </Button>
               </div>
               
-              {/* Mantle Params */}
+              {/* 地幔层参数 */}
               <div className="space-y-3">
-                <Label className="text-xs uppercase text-red-500 font-bold">Mantle Layer</Label>
-                <ParamControl label="Depletion Rate" paramKey="depletionRate" min={0} max={0.05} step={0.001} />
-                <ParamControl label="Max Radius" paramKey="maxRadius" min={10} max={40} step={1} />
-                <ParamControl label="Min Radius" paramKey="minRadius" min={0} max={20} step={1} />
+                <Label className="text-xs uppercase text-red-500 font-bold">地幔层参数</Label>
+                <ParamControl label="能量衰减率" paramKey="depletionRate" min={0} max={0.05} step={0.001} />
+                <ParamControl label="最大半径" paramKey="maxRadius" min={10} max={40} step={1} />
+                <ParamControl label="最小半径" paramKey="minRadius" min={0} max={20} step={1} />
+                <ParamControl label="旋转速度" paramKey="rotationSpeed" min={0} max={0.05} step={0.001} />
               </div>
               
-              {/* Climate Params */}
+              {/* 气候层参数 */}
               <div className="space-y-3">
-                <Label className="text-xs uppercase text-blue-500 font-bold">Climate Layer</Label>
-                <ParamControl label="Diffusion" paramKey="diffusionRate" min={0} max={0.2} step={0.01} />
-                <ParamControl label="Thunder Threshold" paramKey="thunderstormThreshold" min={5} max={30} step={1} />
+                <Label className="text-xs uppercase text-blue-500 font-bold">气候层参数</Label>
+                <ParamControl label="扩散速度" paramKey="diffusionRate" min={0} max={0.2} step={0.01} />
+                <ParamControl label="雷暴阈值" paramKey="thunderstormThreshold" min={5} max={30} step={1} />
               </div>
               
-              {/* Crystal Params */}
+              {/* 晶石层参数 */}
               <div className="space-y-3">
-                <Label className="text-xs uppercase text-emerald-500 font-bold">Crystal Layer</Label>
-                <ParamControl label="Alpha Demand" paramKey="alphaEnergyDemand" min={1} max={10} step={0.5} />
-                <ParamControl label="Invasion Threshold" paramKey="invasionThreshold" min={1} max={5} step={1} />
+                <Label className="text-xs uppercase text-emerald-500 font-bold">晶石层参数</Label>
+                <ParamControl label="Alpha生存需求" paramKey="alphaEnergyDemand" min={1} max={10} step={0.5} />
+                <ParamControl label="入侵阈值" paramKey="invasionThreshold" min={1} max={5} step={1} />
               </div>
             </TabsContent>
           </Tabs>
