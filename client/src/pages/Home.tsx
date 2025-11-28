@@ -41,6 +41,19 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   edgeGenerationOffset: { desc: "边缘能量生成的起始偏移（从边缘第几层开始）", impact: "高：能量生成更靠内 / 低：能量生成紧贴边缘" },
   edgeSupplyPointCount: { desc: "边缘能量供给点的数量", impact: "高：多点供给 / 低：少点供给" },
   edgeSupplyPointSpeed: { desc: "边缘供给点的迁移速度", impact: "高：供给点移动快 / 低：供给点移动慢" },
+  
+  // 人类层参数
+  humanMinTemp: { desc: "人类适宜生存的最低温度", impact: "高: 只能在温暖区域生存 / 低: 耐寒能力强" },
+  humanMaxTemp: { desc: "人类适宜生存的最高温度", impact: "高: 耐热能力强 / 低: 只能在凉爽区域生存" },
+  humanSurvivalMinTemp: { desc: "人类生存的极限低温", impact: "低于此温度人类将直接死亡" },
+  humanSurvivalMaxTemp: { desc: "人类生存的极限高温", impact: "高于此温度人类将直接死亡" },
+  humanProsperityGrowth: { desc: "适宜环境下的繁荣度增长速度", impact: "高: 发展迅速 / 低: 发展缓慢" },
+  humanProsperityDecay: { desc: "恶劣环境下的繁荣度衰减速度", impact: "高: 容易灭绝 / 低: 生存力强" },
+  humanExpansionThreshold: { desc: "触发扩张所需的繁荣度阈值", impact: "高: 难以扩张 / 低: 容易扩张" },
+  humanMiningReward: { desc: "开采Beta晶石获得的繁荣度奖励", impact: "高: 采矿收益大 / 低: 采矿收益小" },
+  humanMigrationThreshold: { desc: "触发迁移的繁荣度阈值", impact: "高: 容易迁移 / 低: 坚守原地" },
+  humanSpawnPoint: { desc: "人类重生点坐标", impact: "人类灭绝后重新生成的固定位置" },
+  energySharingLimit: { desc: "晶石能量共享上限", impact: "限制单次共享的最大能量值" },
 };
 
 export default function Home() {
