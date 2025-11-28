@@ -38,6 +38,8 @@ export interface SimulationParams {
   distortionSpeed: number;
   edgeGenerationWidth: number;
   edgeGenerationEnergy: number; // 噪声扭曲速度
+  edgeSupplyPointCount: number; // 边缘供给点数量
+  edgeSupplyPointSpeed: number; // 边缘供给点迁移速度
   
   // 气候层参数
   diffusionRate: number;
@@ -66,6 +68,8 @@ export const DEFAULT_PARAMS: SimulationParams = {
   distortionSpeed: 0.01,
   edgeGenerationWidth: 2,
   edgeGenerationEnergy: 10,
+  edgeSupplyPointCount: 3,
+  edgeSupplyPointSpeed: 0.05,
   
   // 气候层
   diffusionRate: 0.12,
@@ -93,6 +97,7 @@ export class SimulationEngine {
   
   noiseOffsetX: number;
   noiseOffsetY: number;
+  edgeSupplyPoints: { angle: number, speed: number }[];
   
   constructor(width: number, height: number, params: SimulationParams = DEFAULT_PARAMS) {
     this.width = width;
@@ -102,6 +107,10 @@ export class SimulationEngine {
     this.cycleCount = 0;
     this.noiseOffsetX = Math.random() * 1000;
     this.noiseOffsetY = Math.random() * 1000;
+    this.edgeSupplyPoints = Array(params.edgeSupplyPointCount || 3).fill(0).map(() => ({
+      angle: Math.random() * Math.PI * 2,
+      speed: (Math.random() - 0.5) * (params.edgeSupplyPointSpeed || 0.05)
+    }));
     this.grid = this.initializeGrid();
   }
   
@@ -250,43 +259,63 @@ export class SimulationEngine {
       }
     }
     
-    // 边缘能量生成机制 (补丁)
-    const { edgeGenerationWidth, edgeGenerationEnergy } = this.params;
+    // 边缘能量生成机制 (随机迁移点供给)
+    const { edgeGenerationWidth, edgeGenerationEnergy, edgeSupplyPointSpeed } = this.params;
+    
+    // 更新供给点位置
+    this.edgeSupplyPoints.forEach(point => {
+      point.angle += point.speed * (Math.random() * 0.5 + 0.75); // 随机扰动速度
+      if (point.angle > Math.PI * 2) point.angle -= Math.PI * 2;
+      if (point.angle < 0) point.angle += Math.PI * 2;
+      
+      // 偶尔改变速度方向
+      if (Math.random() < 0.01) {
+        point.speed = (Math.random() - 0.5) * (edgeSupplyPointSpeed || 0.05);
+      }
+    });
+
     if (edgeGenerationEnergy > 0) {
+        // 密度配置函数：计算某点受到所有供给点的影响
+        const getDensity = (angle: number) => {
+          let density = 0;
+          for (const point of this.edgeSupplyPoints) {
+            // 计算角度差 (考虑周期性)
+            let diff = Math.abs(angle - point.angle);
+            if (diff > Math.PI) diff = Math.PI * 2 - diff;
+            
+            // 高斯分布影响
+            // 宽度由 edgeGenerationWidth 控制 (这里作为角度宽度的影响因子)
+            // 假设 width=2 对应约 30度 (PI/6) 的影响范围
+            const sigma = (edgeGenerationWidth || 2) * 0.15; 
+            density += Math.exp(-(diff * diff) / (2 * sigma * sigma));
+          }
+          return density;
+        };
+
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
                 const cell = this.grid[y][x];
                 if (!cell.exists) continue;
 
-                // 检查是否在边缘 n 格范围内
-                // 简单算法：如果 n 格内有不存在的邻居，则视为边缘
-                // 为了性能，我们只检查直接邻居，然后通过扩散传播
-                // 或者更精确地：BFS 搜索最近的空地块距离
-                
-                // 这里采用简化版：如果周围 edgeGenerationWidth 范围内有空地块
-                let isNearEdge = false;
-                const range = Math.floor(edgeGenerationWidth);
-                
-                check_edge:
-                for (let dy = -range; dy <= range; dy++) {
-                    for (let dx = -range; dx <= range; dx++) {
-                        const nx = x + dx;
-                        const ny = y + dy;
-                        if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height) {
-                            if (!this.grid[ny][nx].exists) {
-                                isNearEdge = true;
-                                break check_edge;
-                            }
-                        } else {
-                            // 地图边界也视为边缘
-                            isNearEdge = true;
-                            break check_edge;
-                        }
-                    }
+                // 检查是否在边缘
+                let isEdge = false;
+                const neighbors = this.getNeighbors(x, y);
+                if (neighbors.some(n => !n.exists) || neighbors.length < 8) {
+                    isEdge = true;
                 }
 
-                if (isNearEdge) {
-                    cell.mantleEnergy += edgeGenerationEnergy;
+                if (isEdge) {
+                    // 计算当前点的角度
+                    const dx = x - centerX;
+                    const dy = y - centerY;
+                    let angle = Math.atan2(dy, dx);
+                    if (angle < 0) angle += Math.PI * 2;
+                    
+                    // 获取供给密度
+                    const density = getDensity(angle);
+                    
+                    // 应用能量供给
+                    cell.mantleEnergy += edgeGenerationEnergy * density;
                 }
             }
         }

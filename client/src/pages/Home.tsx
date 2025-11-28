@@ -10,6 +10,8 @@ import * as d3 from "d3";
 import { FastForward, HelpCircle, Pause, Play, RefreshCw, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import HumanBehaviorTool, { ToolType } from "@/components/HumanBehaviorTool";
+import ConfigManager from "@/components/ConfigManager";
+import { useConfigManager } from "@/hooks/useConfigManager";
 
 // 参数说明 (汉化)
 const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string }> = {
@@ -35,13 +37,34 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   harvestThreshold: { desc: "采集阈值 (自动模拟中未使用)", impact: "N/A" },
   edgeGenerationWidth: { desc: "边缘能量生成的宽度范围（格数）", impact: "高：边缘生成范围更广 / 低：仅在紧邻边缘处生成" },
   edgeGenerationEnergy: { desc: "边缘每格每次迭代生成的能量值", impact: "高：边缘快速扩张 / 低：边缘扩张缓慢" },
+  edgeSupplyPointCount: { desc: "边缘能量供给点的数量", impact: "高：多点供给 / 低：少点供给" },
+  edgeSupplyPointSpeed: { desc: "边缘供给点的迁移速度", impact: "高：供给点移动快 / 低：供给点移动慢" },
 };
 
 export default function Home() {
+  // Config Manager
+  const { 
+    defaultConfig, 
+    savedVersions, 
+    saveAsDefault, 
+    saveVersion, 
+    deleteVersion, 
+    loadVersion, 
+    resetDefault 
+  } = useConfigManager();
+
   // State
-  const [engine, setEngine] = useState(() => new SimulationEngine(50, 50));
+  const [engine, setEngine] = useState(() => new SimulationEngine(50, 50, defaultConfig));
   const [isPlaying, setIsPlaying] = useState(false);
-  const [params, setParams] = useState<SimulationParams>(DEFAULT_PARAMS);
+  const [params, setParams] = useState<SimulationParams>(defaultConfig);
+
+  // Sync params with defaultConfig when it changes (e.g. on load)
+  useEffect(() => {
+    setParams(defaultConfig);
+    // Re-initialize engine with new default params if needed, 
+    // but usually we just want to update current params.
+    // However, for initial load, we want to ensure engine starts with saved default.
+  }, [defaultConfig]);
   const [activeLayer, setActiveLayer] = useState<'combined' | 'mantle' | 'climate' | 'crystal'>('combined');
   const [stats, setStats] = useState({ timeStep: 0, cycle: 0, fps: 0 });
   const [mapSize, setMapSize] = useState({ width: 50, height: 50 });
@@ -486,6 +509,7 @@ export default function Home() {
             <TabsList className="w-full bg-neutral-950 rounded-none border-b border-neutral-800 p-0 h-10">
               <TabsTrigger value="layers" className="flex-1 rounded-none data-[state=active]:bg-neutral-900 data-[state=active]:text-neutral-100 border-b-2 border-transparent data-[state=active]:border-blue-500">图层</TabsTrigger>
               <TabsTrigger value="params" className="flex-1 rounded-none data-[state=active]:bg-neutral-900 data-[state=active]:text-neutral-100 border-b-2 border-transparent data-[state=active]:border-blue-500">参数</TabsTrigger>
+              <TabsTrigger value="config" className="flex-1 rounded-none data-[state=active]:bg-neutral-900 data-[state=active]:text-neutral-100 border-b-2 border-transparent data-[state=active]:border-blue-500">配置</TabsTrigger>
             </TabsList>
             
             <TabsContent value="layers" className="flex-1 p-4 space-y-4 overflow-y-auto">
@@ -550,6 +574,27 @@ export default function Home() {
               </div>
             </TabsContent>
             
+            <TabsContent value="config" className="flex-1 p-4 space-y-6 overflow-y-auto">
+              <ConfigManager 
+                currentParams={params}
+                onLoadParams={(p) => {
+                  setParams(p);
+                  // 重启引擎以应用某些需要初始化的参数（如供给点数量）
+                  setEngine(new SimulationEngine(mapSize.width, mapSize.height, p));
+                  setStats({ timeStep: 0, cycle: 0, fps: 0 });
+                  setIsPlaying(false);
+                }}
+                onSaveDefault={saveAsDefault}
+                onResetDefault={() => {
+                  const p = resetDefault();
+                  setParams(p);
+                }}
+                savedVersions={savedVersions}
+                onSaveVersion={saveVersion}
+                onDeleteVersion={deleteVersion}
+              />
+            </TabsContent>
+
             <TabsContent value="params" className="flex-1 p-4 space-y-6 overflow-y-auto">
               <div className="flex justify-end">
                   <Button variant="ghost" size="sm" onClick={resetParams} className="text-xs h-6">
@@ -568,6 +613,8 @@ export default function Home() {
                 <ParamControl label="扭曲速度" paramKey="distortionSpeed" min={0} max={0.05} step={0.001} />
                 <ParamControl label="边缘生成宽度" paramKey="edgeGenerationWidth" min={0} max={5} step={1} />
                 <ParamControl label="边缘生成能量" paramKey="edgeGenerationEnergy" min={0} max={10} step={0.1} />
+                <ParamControl label="供给点数量(需重启)" paramKey="edgeSupplyPointCount" min={1} max={10} step={1} />
+                <ParamControl label="供给点迁移速度" paramKey="edgeSupplyPointSpeed" min={0} max={0.5} step={0.01} />
               </div>
               
               {/* 气候层参数 */}
