@@ -695,8 +695,16 @@ export class SimulationEngine {
         
         // 能量枯竭
         if (cell.storedEnergy <= 0) {
-            cell.crystalState = 'EMPTY';
-            cell.storedEnergy = 0;
+            if (cell.crystalState === 'ALPHA') {
+                // Alpha 晶石死亡转化为 Beta 晶石 (硬化)
+                cell.crystalState = 'BETA';
+                // Beta 晶石不需要能量维持，但也没有能量
+                cell.storedEnergy = 0;
+            } else {
+                // Beta 晶石或其他状态死亡变为空
+                cell.crystalState = 'EMPTY';
+                cell.storedEnergy = 0;
+            }
         }
       }
     }
