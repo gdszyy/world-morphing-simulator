@@ -43,7 +43,7 @@ export default function Home() {
   const [stats, setStats] = useState({ timeStep: 0, cycle: 0, fps: 0 });
   const [mapSize, setMapSize] = useState({ width: 50, height: 50 });
   const [isRestartOpen, setIsRestartOpen] = useState(false);
-  const [speedMultiplier, setSpeedMultiplier] = useState(1); // 播放速率倍数
+  const [speedMultiplier, setSpeedMultiplier] = useState(1); // 播放速率倍数 (支持小数)
   
   // Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -76,11 +76,37 @@ export default function Home() {
   }, [engine, activeLayer]); // Re-bind when engine changes
   
   // Simulation Loop
+  const lastUpdateRef = useRef<number>(0); // 上次更新的时间
+  
   const animate = (time: number) => {
     if (isPlaying) {
-      // 根据倍速执行多次更新
-      for (let i = 0; i < speedMultiplier; i++) {
-        engine.update();
+      // 计算时间增量
+      const dt = time - lastUpdateRef.current;
+      
+      // 目标帧间隔 (ms)
+      // 如果倍率 >= 1，每帧更新 N 次 (间隔为 0)
+      // 如果倍率 < 1，每 1/N 帧更新一次 (间隔为 1000/60 / N)
+      // 这里简化逻辑：
+      // 基础更新频率假设为 60Hz (约16ms)
+      // 累积时间用于处理慢放
+      
+      if (speedMultiplier >= 1) {
+          // 快进模式：每帧执行多次
+          for (let i = 0; i < Math.floor(speedMultiplier); i++) {
+            engine.update();
+          }
+          lastUpdateRef.current = time;
+      } else {
+          // 慢放模式：控制更新频率
+          // 目标间隔 = 16.67ms / speedMultiplier
+          // 例如 0.5x -> 33.33ms 间隔
+          // 例如 0.1x -> 166.67ms 间隔
+          const targetInterval = 1000 / 60 / speedMultiplier;
+          
+          if (dt >= targetInterval) {
+              engine.update();
+              lastUpdateRef.current = time;
+          }
       }
       
       setStats({
@@ -88,6 +114,8 @@ export default function Home() {
         cycle: engine.cycleCount,
         fps: Math.round(1000 / (time - lastTimeRef.current))
       });
+    } else {
+        lastUpdateRef.current = time;
     }
     lastTimeRef.current = time;
     
@@ -270,6 +298,27 @@ export default function Home() {
           {/* 播放速率控制 */}
           <div className="flex items-center gap-1 mr-2 bg-neutral-800 rounded px-2 py-1">
             <span className="text-xs text-neutral-400">速率:</span>
+            
+            {/* 慢放选项 */}
+            <Button 
+                variant={speedMultiplier === 0.01 ? "secondary" : "ghost"} 
+                size="icon" className="h-6 w-8 text-[10px]"
+                onClick={() => setSpeedMultiplier(0.01)}
+            >0.01x</Button>
+            <Button 
+                variant={speedMultiplier === 0.1 ? "secondary" : "ghost"} 
+                size="icon" className="h-6 w-8 text-[10px]"
+                onClick={() => setSpeedMultiplier(0.1)}
+            >0.1x</Button>
+            <Button 
+                variant={speedMultiplier === 0.5 ? "secondary" : "ghost"} 
+                size="icon" className="h-6 w-8 text-[10px]"
+                onClick={() => setSpeedMultiplier(0.5)}
+            >0.5x</Button>
+            
+            <div className="w-px h-4 bg-neutral-700 mx-1"></div>
+            
+            {/* 正常/快进选项 */}
             <Button 
                 variant={speedMultiplier === 1 ? "secondary" : "ghost"} 
                 size="icon" className="h-6 w-6 text-xs"
@@ -285,11 +334,6 @@ export default function Home() {
                 size="icon" className="h-6 w-6 text-xs"
                 onClick={() => setSpeedMultiplier(10)}
             >10x</Button>
-            <Button 
-                variant={speedMultiplier === 50 ? "secondary" : "ghost"} 
-                size="icon" className="h-6 w-6 text-xs"
-                onClick={() => setSpeedMultiplier(50)}
-            ><FastForward className="w-3 h-3" /></Button>
           </div>
 
           <Button 
