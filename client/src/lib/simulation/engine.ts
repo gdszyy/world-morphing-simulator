@@ -697,12 +697,15 @@ export class SimulationEngine {
       }
     }
 
-    // 1.5 能量共享 (Energy Sharing)
-    // 连通的 ALPHA 晶石可以共享能量，使得能量分布更均匀，防止局部枯竭
-    // 简单实现：每个晶石与周围的 ALPHA 邻居交换能量
-    const { energySharingRate } = this.params;
-    const energyChanges = Array(this.height).fill(0).map(() => Array(this.width).fill(0));
+    // 1.5 能量共享 (Energy Sharing) - 全局连通分量共享
+    // 逻辑：
+    // 1. 找出所有连通的 ALPHA 晶石群 (Connected Components)
+    // 2. 在每个连通群内部，计算总能量和平均能量
+    // 3. 所有晶石的能量趋向于平均值，速率由 energySharingRate 控制
+    // 4. 记录能量流向用于可视化
 
+    const { energySharingRate } = this.params;
+    
     // 清空上一帧的能量流记录
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
@@ -710,44 +713,81 @@ export class SimulationEngine {
       }
     }
 
+    const visited = new Set<string>();
+    const limit = maxCrystalEnergy * (this.params.energySharingLimit || 1.2);
+
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
-        const cell = this.grid[y][x];
-        if (!cell.exists || cell.crystalState !== 'ALPHA') continue;
+        const startKey = `${x},${y}`;
+        const startCell = this.grid[y][x];
 
-        const neighbors = this.getNeighbors(x, y).filter(n => n.exists && n.crystalState === 'ALPHA');
-        for (const neighbor of neighbors) {
-            const diff = neighbor.storedEnergy - cell.storedEnergy;
-            // 能量从高流向低
+        if (!startCell.exists || startCell.crystalState !== 'ALPHA' || visited.has(startKey)) {
+            continue;
+        }
+
+        // BFS 寻找连通分量
+        const component: {x: number, y: number, cell: any}[] = [];
+        const queue = [startCell];
+        visited.add(startKey);
+        
+        let totalEnergy = 0;
+
+        while (queue.length > 0) {
+            const current = queue.shift()!;
+            component.push({ x: current.x, y: current.y, cell: current });
+            totalEnergy += current.storedEnergy;
+
+            const neighbors = this.getNeighbors(current.x, current.y)
+                .filter(n => n.exists && n.crystalState === 'ALPHA');
             
-            if (diff > 0) {
-                const flow = diff * (energySharingRate || 0.1);
-                
-                // 检查接收方是否超过共享上限
-                const limit = maxCrystalEnergy * (this.params.energySharingLimit || 1.2);
-                if (cell.storedEnergy + flow > limit) {
-                    continue; // 超过上限不接收
+            for (const n of neighbors) {
+                const key = `${n.x},${n.y}`;
+                if (!visited.has(key)) {
+                    visited.add(key);
+                    queue.push(n);
                 }
-
-                energyChanges[y][x] += flow;
-                energyChanges[neighbor.y][neighbor.x] -= flow;
-                
-                // 记录流向: neighbor -> cell
-                neighbor.energyFlow.push({ x: cell.x, y: cell.y, amount: flow });
             }
         }
-      }
-    }
 
-    // 应用能量共享
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        const cell = this.grid[y][x];
-        if (!cell.exists || cell.crystalState !== 'ALPHA') continue;
-        
-        cell.storedEnergy += energyChanges[y][x];
-        // 再次确保不超限
-        cell.storedEnergy = Math.max(0, Math.min(cell.storedEnergy, maxCrystalEnergy));
+        // 计算平均能量
+        if (component.length > 1) {
+            const avgEnergy = totalEnergy / component.length;
+
+            // 应用共享
+            for (const item of component) {
+                const diff = avgEnergy - item.cell.storedEnergy;
+                
+                // 变化量 = 差距 * 共享率
+                // 如果 rate > 1.0，可能会产生过冲震荡，这里限制单次变化不超过 diff 本身
+                // 但用户要求 1.2，意味着强力均衡甚至过充
+                let change = diff * energySharingRate;
+
+                // 限制：不能凭空产生能量 (虽然 diff 总和为 0，但为了数值稳定)
+                // 限制：不能超过上限
+                if (change > 0 && item.cell.storedEnergy + change > limit) {
+                    change = limit - item.cell.storedEnergy;
+                }
+                
+                // 更新能量
+                item.cell.storedEnergy += change;
+                
+                // 记录流向 (简化：指向能量中心或从高能流向低能)
+                // 为了可视化，我们只记录"流入"的向量
+                if (change > 0) {
+                    // 寻找能量比自己高的邻居作为来源
+                    const richNeighbors = this.getNeighbors(item.x, item.y)
+                        .filter(n => n.exists && n.crystalState === 'ALPHA' && n.storedEnergy > item.cell.storedEnergy);
+                    
+                    if (richNeighbors.length > 0) {
+                        // 均分来源显示
+                        const amountPerSource = change / richNeighbors.length;
+                        for (const source of richNeighbors) {
+                            source.energyFlow.push({ x: item.x, y: item.y, amount: amountPerSource });
+                        }
+                    }
+                }
+            }
+        }
       }
     }
     
