@@ -29,8 +29,8 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   betaEnergyDemand: { desc: "Beta晶石所需能量 (未使用)", impact: "N/A" },
   mantleAbsorption: { desc: "吸收地幔能量的效率", impact: "高: 生长快 / 低: 生长慢" },
   thunderstormEnergy: { desc: "雷暴提供的额外能量", impact: "高: 雷暴促进生长 / 低: 雷暴影响小" },
-  invasionThreshold: { desc: "入侵空地所需的邻居数量", impact: "高: 扩张慢 / 低: 扩张快" },
-  invasionEnergyFactor: { desc: "入侵所需的能量倍率", impact: "高: 难以入侵 / 低: 容易入侵" },
+  expansionCost: { desc: "扩张到新地块所需的能量", impact: "高: 扩张慢 / 低: 扩张快" },
+  maxCrystalEnergy: { desc: "晶石可存储的最大能量", impact: "高: 生存力强 / 低: 容易硬化" },
   harvestThreshold: { desc: "采集阈值 (自动模拟中未使用)", impact: "N/A" },
 };
 
@@ -301,20 +301,15 @@ export default function Home() {
             
             {/* 慢放选项 */}
             <Button 
-                variant={speedMultiplier === 0.01 ? "secondary" : "ghost"} 
+                variant={speedMultiplier === 0.05 ? "secondary" : "ghost"} 
                 size="icon" className="h-6 w-8 text-[10px]"
-                onClick={() => setSpeedMultiplier(0.01)}
-            >0.01x</Button>
+                onClick={() => setSpeedMultiplier(0.05)}
+            >0.05x</Button>
             <Button 
-                variant={speedMultiplier === 0.1 ? "secondary" : "ghost"} 
+                variant={speedMultiplier === 0.2 ? "secondary" : "ghost"} 
                 size="icon" className="h-6 w-8 text-[10px]"
-                onClick={() => setSpeedMultiplier(0.1)}
-            >0.1x</Button>
-            <Button 
-                variant={speedMultiplier === 0.5 ? "secondary" : "ghost"} 
-                size="icon" className="h-6 w-8 text-[10px]"
-                onClick={() => setSpeedMultiplier(0.5)}
-            >0.5x</Button>
+                onClick={() => setSpeedMultiplier(0.2)}
+            >0.2x</Button>
             
             <div className="w-px h-4 bg-neutral-700 mx-1"></div>
             
@@ -325,15 +320,10 @@ export default function Home() {
                 onClick={() => setSpeedMultiplier(1)}
             >1x</Button>
             <Button 
-                variant={speedMultiplier === 5 ? "secondary" : "ghost"} 
+                variant={speedMultiplier === 2 ? "secondary" : "ghost"} 
                 size="icon" className="h-6 w-6 text-xs"
-                onClick={() => setSpeedMultiplier(5)}
-            >5x</Button>
-            <Button 
-                variant={speedMultiplier === 10 ? "secondary" : "ghost"} 
-                size="icon" className="h-6 w-6 text-xs"
-                onClick={() => setSpeedMultiplier(10)}
-            >10x</Button>
+                onClick={() => setSpeedMultiplier(2)}
+            >2x</Button>
           </div>
 
           <Button 
@@ -485,7 +475,8 @@ export default function Home() {
               <div className="space-y-3">
                 <Label className="text-xs uppercase text-emerald-500 font-bold">晶石层参数</Label>
                 <ParamControl label="Alpha生存需求" paramKey="alphaEnergyDemand" min={1} max={10} step={0.5} />
-                <ParamControl label="入侵阈值" paramKey="invasionThreshold" min={1} max={5} step={1} />
+                <ParamControl label="扩张消耗" paramKey="expansionCost" min={5} max={50} step={1} />
+                <ParamControl label="能量上限" paramKey="maxCrystalEnergy" min={10} max={100} step={5} />
               </div>
             </TabsContent>
           </Tabs>

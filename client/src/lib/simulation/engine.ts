@@ -22,8 +22,9 @@ export interface Cell {
   
   // 晶石层
   crystalState: CellType;
-  crystalEnergy: number; // 用于可视化
-  isAbsorbing: boolean; // 新增：是否正在吸收能量（用于视觉效果）
+  crystalEnergy: number; // 当前帧获得的能量 (用于可视化)
+  storedEnergy: number; // 累积能量 (用于扩张)
+  isAbsorbing: boolean; // 是否正在吸收能量
 }
 
 export interface SimulationParams {
@@ -45,10 +46,10 @@ export interface SimulationParams {
   // 晶石层参数
   alphaEnergyDemand: number;
   betaEnergyDemand: number;
-  mantleAbsorption: number; // 吸收效率 (同时影响获得能量和地幔消耗)
+  mantleAbsorption: number; // 吸收效率
   thunderstormEnergy: number;
-  invasionThreshold: number;
-  invasionEnergyFactor: number;
+  expansionCost: number; // 扩张所需能量
+  maxCrystalEnergy: number; // 晶石能量上限
   harvestThreshold: number;
 }
 
@@ -57,10 +58,10 @@ export const DEFAULT_PARAMS: SimulationParams = {
   mantleTimeScale: 0.002,
   expansionThreshold: 100.0,
   shrinkThreshold: 80.0,
-  mantleEnergyLevel: 1.5, // 默认地幔能量充沛 (相对于晶石需求)
+  mantleEnergyLevel: 1.5,
   maxRadius: 22.0,
   minRadius: 5.0,
-  distortionSpeed: 0.01, // 缓慢扭曲
+  distortionSpeed: 0.01,
   
   // 气候层
   diffusionRate: 0.05,
@@ -73,8 +74,8 @@ export const DEFAULT_PARAMS: SimulationParams = {
   betaEnergyDemand: 2.0,
   mantleAbsorption: 0.1,
   thunderstormEnergy: 10.0,
-  invasionThreshold: 2,
-  invasionEnergyFactor: 1.5,
+  expansionCost: 20.0,
+  maxCrystalEnergy: 50.0,
   harvestThreshold: 0.8,
 };
 
@@ -86,7 +87,6 @@ export class SimulationEngine {
   cycleCount: number;
   params: SimulationParams;
   
-  // 噪声偏移量 (用于原地演化)
   noiseOffsetX: number;
   noiseOffsetY: number;
   
@@ -109,13 +109,11 @@ export class SimulationEngine {
     for (let y = 0; y < this.height; y++) {
       const row: Cell[] = [];
       for (let x = 0; x < this.width; x++) {
-        // 初始圆形地形
         const dist = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
         const initialRadius = Math.min(this.width, this.height) * 0.4;
         
         const exists = dist < initialRadius;
         
-        // 初始晶石：在中心放置一些Alpha晶石
         let crystalState: CellType = 'EMPTY';
         if (exists && dist < 3) {
             crystalState = 'ALPHA';
@@ -134,6 +132,7 @@ export class SimulationEngine {
           hasThunderstorm: false,
           crystalState,
           crystalEnergy: 0,
+          storedEnergy: 10.0, // 初始能量
           isAbsorbing: false,
         });
       }
@@ -153,7 +152,6 @@ export class SimulationEngine {
     this.updateCrystalLayer();
   }
   
-  // --- 地幔层更新 ---
   updateMantleLayer() {
     const { 
         mantleTimeScale, expansionThreshold, shrinkThreshold, 
@@ -161,10 +159,6 @@ export class SimulationEngine {
     } = this.params;
     const centerX = this.width / 2;
     const centerY = this.height / 2;
-    
-    // 1. 更新能量 (原地演化的扭曲噪声)
-    // 使用 Domain Warping (域扭曲) 算法：f(p + f(p))
-    // 这种算法会产生类似液体流动或大理石纹理的效果，但整体位置保持相对稳定
     
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
@@ -174,29 +168,21 @@ export class SimulationEngine {
             continue;
         }
         
-        // 基础坐标
         const nx = x * 0.1;
         const ny = y * 0.1;
         const time = this.timeStep * mantleTimeScale;
         
-        // 第一层噪声：用于扭曲坐标
         const qx = Math.sin(nx + time);
         const qy = Math.cos(ny + time);
         
-        // 第二层噪声：使用扭曲后的坐标采样
-        // 加上 distortionSpeed 控制扭曲程度
         const noise = Math.sin(nx + qx * distortionSpeed + time) * 
                       Math.cos(ny + qy * distortionSpeed + time);
         
-        // 映射到能量值 [0, 100] * EnergyLevel
-        // 基础能量 50，波动幅度 50
         let energy = (noise * 0.5 + 0.5) * 100 * mantleEnergyLevel;
         
-        // 保持当前能量与目标能量的平滑过渡 (惯性)
         cell.mantleEnergy += (energy - cell.mantleEnergy) * 0.1;
-        cell.mantleEnergy = Math.max(0, cell.mantleEnergy); // 允许超过100
+        cell.mantleEnergy = Math.max(0, cell.mantleEnergy);
         
-        // 2. 计算扩张势能
         const neighbors = this.getNeighbors(x, y);
         const existingNeighbors = neighbors.filter(n => n.exists);
         const avgNeighborEnergy = existingNeighbors.length > 0 
@@ -207,7 +193,6 @@ export class SimulationEngine {
         const neighborInfluence = (avgNeighborEnergy - 50.0) * 0.3;
         cell.expansionPotential = basePotential + neighborInfluence;
         
-        // 3. 扩张/缩减逻辑 (圆形约束)
         const isEdge = neighbors.some(n => !n.exists);
         const dx = x - centerX;
         const dy = y - centerY;
@@ -217,7 +202,6 @@ export class SimulationEngine {
             if (cell.expansionPotential > 0) {
                 cell.expansionAccumulator += cell.expansionPotential * 0.1;
                 if (cell.expansionAccumulator > expansionThreshold) {
-                    // 扩张到随机空邻居，但受最大半径限制
                     const emptyNeighbors = neighbors.filter(n => !n.exists);
                     if (emptyNeighbors.length > 0) {
                         const validTargets = emptyNeighbors.filter(n => {
@@ -236,7 +220,6 @@ export class SimulationEngine {
             } else {
                 cell.shrinkAccumulator += Math.abs(cell.expansionPotential) * 0.1;
                 
-                // 缩减逻辑：受最小半径限制
                 if (dist > minRadius && cell.shrinkAccumulator > shrinkThreshold) {
                     cell.exists = false;
                     cell.mantleEnergy = 0;
@@ -249,11 +232,9 @@ export class SimulationEngine {
     }
   }
   
-  // --- 气候层更新 ---
   updateClimateLayer() {
     const { diffusionRate, advectionRate, thunderstormThreshold, seasonalAmplitude } = this.params;
     
-    // 1. 基础温度 (来自地幔 + 季节)
     const timeCycle = (this.timeStep % 1000) / 1000.0;
     const seasonalOffset = seasonalAmplitude * Math.sin(2 * Math.PI * timeCycle);
     
@@ -261,38 +242,30 @@ export class SimulationEngine {
       for (let x = 0; x < this.width; x++) {
         const cell = this.grid[y][x];
         if (!cell.exists) {
-            cell.temperature = -50; // 虚空极冷
+            cell.temperature = -50;
             cell.hasThunderstorm = false;
             continue;
         }
         
-        // 温度受地幔能量影响，但归一化到 [-25, 25] 范围
-        // 假设标准地幔能量为 50 * EnergyLevel
         const normalizedEnergy = Math.min(100, cell.mantleEnergy); 
         cell.baseTemperature = (normalizedEnergy - 50.0) * 0.5 + seasonalOffset;
         
-        // 2. 热扩散
         const neighbors = this.getNeighbors(x, y).filter(n => n.exists);
         if (neighbors.length > 0) {
             const avgTemp = neighbors.reduce((sum, n) => sum + n.temperature, 0) / neighbors.length;
             cell.temperatureChange = diffusionRate * (avgTemp - cell.temperature);
         }
         
-        // 3. 晶石冷却效应
         if (cell.crystalState === 'ALPHA') cell.temperatureChange -= 0.5;
         if (cell.crystalState === 'BETA') cell.temperatureChange -= 0.2;
         
-        // 应用变化
         cell.temperature += cell.temperatureChange;
-        // 回归基础温度 (简单稳定性)
         cell.temperature += (cell.baseTemperature - cell.temperature) * 0.1; 
         
-        // 限制范围
         cell.temperature = Math.max(-50, Math.min(50, cell.temperature));
       }
     }
     
-    // 4. 雷暴状态 (后处理检查)
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const cell = this.grid[y][x];
@@ -309,72 +282,95 @@ export class SimulationEngine {
     }
   }
   
-  // --- 晶石层更新 ---
   updateCrystalLayer() {
     const { 
         alphaEnergyDemand, betaEnergyDemand, mantleAbsorption, thunderstormEnergy,
-        invasionThreshold, invasionEnergyFactor 
+        expansionCost, maxCrystalEnergy 
     } = this.params;
     
-    // 临时网格存储下一状态
+    // 1. 能量获取与消耗 (直接更新当前状态)
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const cell = this.grid[y][x];
+        if (!cell.exists || cell.crystalState !== 'ALPHA') {
+            cell.isAbsorbing = false;
+            cell.crystalEnergy = 0;
+            continue;
+        }
+        
+        // 吸收能量
+        let energyInput = 0;
+        const absorbed = cell.mantleEnergy * mantleAbsorption;
+        energyInput += absorbed;
+        
+        if (absorbed > 0.1) {
+            cell.mantleEnergy = Math.max(0, cell.mantleEnergy - absorbed);
+            cell.isAbsorbing = true;
+        } else {
+            cell.isAbsorbing = false;
+        }
+        
+        if (cell.hasThunderstorm) energyInput += thunderstormEnergy;
+        
+        // 记录输入用于可视化
+        cell.crystalEnergy = energyInput;
+        
+        // 能量结算
+        const netEnergy = energyInput - alphaEnergyDemand;
+        cell.storedEnergy += netEnergy;
+        
+        // 能量上限
+        cell.storedEnergy = Math.min(cell.storedEnergy, maxCrystalEnergy);
+      }
+    }
+    
+    // 2. 状态转移 (基于 grid 计算 nextStates)
     const nextStates: CellType[][] = this.grid.map(row => row.map(c => c.crystalState));
+    const nextStoredEnergy: number[][] = this.grid.map(row => row.map(c => c.storedEnergy));
     
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const cell = this.grid[y][x];
         if (!cell.exists) continue;
         
-        // 重置吸收状态
-        cell.isAbsorbing = false;
-        
-        // 能量输入
-        let energyInput = 0;
-        if (cell.crystalState === 'ALPHA') {
-            // 吸收地幔能量
-            const absorbed = cell.mantleEnergy * mantleAbsorption;
-            energyInput += absorbed;
-            
-            // 消耗地幔能量 (直接修改当前状态)
-            if (absorbed > 0.1) {
-                cell.mantleEnergy = Math.max(0, cell.mantleEnergy - absorbed);
-                cell.isAbsorbing = true; // 标记为正在吸收
-            }
-            
-            if (cell.hasThunderstorm) energyInput += thunderstormEnergy;
-        }
-        
-        // 存储用于可视化
-        cell.crystalEnergy = energyInput;
-        
-        // 规则
         const neighbors = this.getNeighbors(x, y).filter(n => n.exists);
         const alphaNeighbors = neighbors.filter(n => n.crystalState === 'ALPHA');
         const betaNeighbors = neighbors.filter(n => n.crystalState === 'BETA');
         
         if (cell.crystalState === 'EMPTY') {
-            // 规则 1: 入侵
-            // 需要邻居有剩余能量 (近似为高地幔能量 + 雷暴)
-            const strongNeighbors = alphaNeighbors.filter(n => n.mantleEnergy > 60 || n.hasThunderstorm);
+            // 规则 1: 扩张 (基于邻居能量)
+            // 寻找能量充足的邻居
+            const richNeighbors = alphaNeighbors.filter(n => n.storedEnergy >= expansionCost);
             
-            if (alphaNeighbors.length >= invasionThreshold && strongNeighbors.length > 0) {
-                nextStates[y][x] = 'ALPHA';
-            }
-        } else if (cell.crystalState === 'ALPHA') {
-            // 规则 2: 硬化 (饥饿)
-            if (energyInput < alphaEnergyDemand) {
-                // 如果邻居富有，有机会存活
-                const richNeighbors = alphaNeighbors.filter(n => n.crystalEnergy > alphaEnergyDemand * 1.5);
-                if (richNeighbors.length < 2) {
-                    nextStates[y][x] = 'BETA';
+            if (richNeighbors.length > 0) {
+                // 随机选择一个富裕邻居进行扩张
+                const parent = richNeighbors[Math.floor(Math.random() * richNeighbors.length)];
+                
+                // 扣除父节点能量 (在 nextStoredEnergy 中扣除)
+                // 注意：这里有并发问题，多个空地可能选择同一个父节点
+                // 简单起见，我们允许透支，或者概率性扩张
+                if (Math.random() < 0.3) { // 限制扩张速度
+                    nextStates[y][x] = 'ALPHA';
+                    nextStoredEnergy[y][x] = 5.0; // 新生晶石自带少量能量
+                    
+                    // 扣除父节点能量 (需要找到父节点在 nextStoredEnergy 中的位置)
+                    nextStoredEnergy[parent.y][parent.x] -= expansionCost;
                 }
             }
+        } else if (cell.crystalState === 'ALPHA') {
+            // 规则 2: 硬化 (能量耗尽)
+            if (cell.storedEnergy <= 0) {
+                nextStates[y][x] = 'BETA';
+                nextStoredEnergy[y][x] = 0;
+            }
             
-            // 规则 4: 孤立
-            if (alphaNeighbors.length === 0 && betaNeighbors.length < 2) {
+            // 规则 3: 孤立死亡 (可选，防止孤点)
+            if (alphaNeighbors.length === 0 && betaNeighbors.length < 2 && cell.storedEnergy < 5) {
                 nextStates[y][x] = 'EMPTY';
+                nextStoredEnergy[y][x] = 0;
             }
         } else if (cell.crystalState === 'BETA') {
-            // 规则 3: 不可逆
+            // 规则 4: 不可逆
             nextStates[y][x] = 'BETA';
         }
       }
@@ -384,6 +380,7 @@ export class SimulationEngine {
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         this.grid[y][x].crystalState = nextStates[y][x];
+        this.grid[y][x].storedEnergy = nextStoredEnergy[y][x];
       }
     }
   }
