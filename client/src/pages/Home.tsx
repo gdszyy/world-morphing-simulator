@@ -15,10 +15,10 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   mantleTimeScale: { desc: "地幔能量随时间变化的速度", impact: "高: 地形变化快 / 低: 地形稳定" },
   expansionThreshold: { desc: "地形扩张所需的能量阈值", impact: "高: 难以扩张 / 低: 快速扩张" },
   shrinkThreshold: { desc: "地形缩减所需的负能量阈值", impact: "高: 难以缩减 / 低: 快速缩减" },
-  depletionRate: { desc: "地幔能量每循环的衰减率", impact: "高: 世界快速死亡 / 低: 世界持久" },
+  mantleEnergyLevel: { desc: "地幔能量相对于晶石需求的倍率", impact: "高: 能量充沛 / 低: 能量匮乏" },
   maxRadius: { desc: "地形扩张的最大半径限制", impact: "高: 地图更大 / 低: 地图更小" },
   minRadius: { desc: "地形缩减的最小半径限制", impact: "高: 核心区域更大 / 低: 核心区域更小" },
-  rotationSpeed: { desc: "地幔能量场的旋转速度", impact: "高: 能量场快速旋转 / 低: 能量场缓慢旋转" },
+  distortionSpeed: { desc: "地幔能量场的扭曲速度", impact: "高: 能量场快速变化 / 低: 能量场缓慢变化" },
   
   diffusionRate: { desc: "温度扩散速度", impact: "高: 温度均匀 / 低: 温差大" },
   advectionRate: { desc: "温度沿梯度流动的速度", impact: "高: 气候移动快 / 低: 气候静止" },
@@ -377,10 +377,10 @@ export default function Home() {
               {/* 地幔层参数 */}
               <div className="space-y-3">
                 <Label className="text-xs uppercase text-red-500 font-bold">地幔层参数</Label>
-                <ParamControl label="能量衰减率" paramKey="depletionRate" min={0} max={0.05} step={0.001} />
+                <ParamControl label="能量等级" paramKey="mantleEnergyLevel" min={0.5} max={3.0} step={0.1} />
                 <ParamControl label="最大半径" paramKey="maxRadius" min={10} max={40} step={1} />
                 <ParamControl label="最小半径" paramKey="minRadius" min={0} max={20} step={1} />
-                <ParamControl label="旋转速度" paramKey="rotationSpeed" min={0} max={0.05} step={0.001} />
+                <ParamControl label="扭曲速度" paramKey="distortionSpeed" min={0} max={0.05} step={0.001} />
               </div>
               
               {/* 气候层参数 */}

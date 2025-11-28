@@ -28,12 +28,12 @@ export interface Cell {
 export interface SimulationParams {
   // 地幔层参数
   mantleTimeScale: number;
-  expansionThreshold: number;
+  expansionThreshold: number; // 地形扩张阈值
   shrinkThreshold: number;
-  depletionRate: number;
-  maxRadius: number; // 最大半径限制
-  minRadius: number; // 最小半径限制
-  rotationSpeed: number; // 新增：地幔能量场旋转速度
+  mantleEnergyLevel: number; // 地幔能量等级 (倍率)
+  maxRadius: number; // 最大半径限制 (硬限制)
+  minRadius: number; // 最小半径限制 (硬限制)
+  distortionSpeed: number; // 噪声扭曲速度
   
   // 气候层参数
   diffusionRate: number;
@@ -44,7 +44,7 @@ export interface SimulationParams {
   // 晶石层参数
   alphaEnergyDemand: number;
   betaEnergyDemand: number;
-  mantleAbsorption: number;
+  mantleAbsorption: number; // 吸收效率 (同时影响获得能量和地幔消耗)
   thunderstormEnergy: number;
   invasionThreshold: number;
   invasionEnergyFactor: number;
@@ -53,13 +53,13 @@ export interface SimulationParams {
 
 export const DEFAULT_PARAMS: SimulationParams = {
   // 地幔层
-  mantleTimeScale: 0.001,
+  mantleTimeScale: 0.002,
   expansionThreshold: 100.0,
   shrinkThreshold: 80.0,
-  depletionRate: 0.01,
+  mantleEnergyLevel: 1.5, // 默认地幔能量充沛 (相对于晶石需求)
   maxRadius: 22.0,
   minRadius: 5.0,
-  rotationSpeed: 0.005, // 默认旋转速度
+  distortionSpeed: 0.01, // 缓慢扭曲
   
   // 气候层
   diffusionRate: 0.05,
@@ -85,12 +85,18 @@ export class SimulationEngine {
   cycleCount: number;
   params: SimulationParams;
   
+  // 噪声偏移量 (用于原地演化)
+  noiseOffsetX: number;
+  noiseOffsetY: number;
+  
   constructor(width: number, height: number, params: SimulationParams = DEFAULT_PARAMS) {
     this.width = width;
     this.height = height;
     this.params = params;
     this.timeStep = 0;
     this.cycleCount = 0;
+    this.noiseOffsetX = Math.random() * 1000;
+    this.noiseOffsetY = Math.random() * 1000;
     this.grid = this.initializeGrid();
   }
   
@@ -147,15 +153,16 @@ export class SimulationEngine {
   
   // --- 地幔层更新 ---
   updateMantleLayer() {
-    const { mantleTimeScale, expansionThreshold, shrinkThreshold, depletionRate, maxRadius, minRadius, rotationSpeed } = this.params;
+    const { 
+        mantleTimeScale, expansionThreshold, shrinkThreshold, 
+        mantleEnergyLevel, maxRadius, minRadius, distortionSpeed 
+    } = this.params;
     const centerX = this.width / 2;
     const centerY = this.height / 2;
     
-    // 1. 更新能量 (使用旋转坐标系采样噪声)
-    const depletionFactor = Math.max(0, 1.0 - this.cycleCount * depletionRate);
-    const angle = this.timeStep * rotationSpeed; // 当前旋转角度
-    const cosA = Math.cos(angle);
-    const sinA = Math.sin(angle);
+    // 1. 更新能量 (原地演化的扭曲噪声)
+    // 使用 Domain Warping (域扭曲) 算法：f(p + f(p))
+    // 这种算法会产生类似液体流动或大理石纹理的效果，但整体位置保持相对稳定
     
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
@@ -165,19 +172,27 @@ export class SimulationEngine {
             continue;
         }
         
-        // 坐标变换：绕中心旋转采样点
-        const dx = x - centerX;
-        const dy = y - centerY;
-        const rx = dx * cosA - dy * sinA;
-        const ry = dx * sinA + dy * cosA;
+        // 基础坐标
+        const nx = x * 0.1;
+        const ny = y * 0.1;
+        const time = this.timeStep * mantleTimeScale;
         
-        // 噪声采样 (使用旋转后的坐标 + 时间演化)
-        const noise = Math.sin(rx * 0.1 + this.timeStep * mantleTimeScale) * 
-                      Math.cos(ry * 0.1 + this.timeStep * mantleTimeScale);
+        // 第一层噪声：用于扭曲坐标
+        const qx = Math.sin(nx + time);
+        const qy = Math.cos(ny + time);
         
-        let energy = (noise + 1) * 50; // [0, 100]
-        energy *= depletionFactor;
-        cell.mantleEnergy = Math.max(0, Math.min(100, energy));
+        // 第二层噪声：使用扭曲后的坐标采样
+        // 加上 distortionSpeed 控制扭曲程度
+        const noise = Math.sin(nx + qx * distortionSpeed + time) * 
+                      Math.cos(ny + qy * distortionSpeed + time);
+        
+        // 映射到能量值 [0, 100] * EnergyLevel
+        // 基础能量 50，波动幅度 50
+        let energy = (noise * 0.5 + 0.5) * 100 * mantleEnergyLevel;
+        
+        // 保持当前能量与目标能量的平滑过渡 (惯性)
+        cell.mantleEnergy += (energy - cell.mantleEnergy) * 0.1;
+        cell.mantleEnergy = Math.max(0, cell.mantleEnergy); // 允许超过100
         
         // 2. 计算扩张势能
         const neighbors = this.getNeighbors(x, y);
@@ -192,6 +207,8 @@ export class SimulationEngine {
         
         // 3. 扩张/缩减逻辑 (圆形约束)
         const isEdge = neighbors.some(n => !n.exists);
+        const dx = x - centerX;
+        const dy = y - centerY;
         const dist = Math.sqrt(dx * dx + dy * dy);
         
         if (isEdge) {
@@ -247,7 +264,10 @@ export class SimulationEngine {
             continue;
         }
         
-        cell.baseTemperature = (cell.mantleEnergy - 50.0) * 0.5 + seasonalOffset;
+        // 温度受地幔能量影响，但归一化到 [-25, 25] 范围
+        // 假设标准地幔能量为 50 * EnergyLevel
+        const normalizedEnergy = Math.min(100, cell.mantleEnergy); 
+        cell.baseTemperature = (normalizedEnergy - 50.0) * 0.5 + seasonalOffset;
         
         // 2. 热扩散
         const neighbors = this.getNeighbors(x, y).filter(n => n.exists);
@@ -305,7 +325,13 @@ export class SimulationEngine {
         // 能量输入
         let energyInput = 0;
         if (cell.crystalState === 'ALPHA') {
-            energyInput = cell.mantleEnergy * mantleAbsorption;
+            // 吸收地幔能量
+            const absorbed = cell.mantleEnergy * mantleAbsorption;
+            energyInput += absorbed;
+            
+            // 消耗地幔能量 (直接修改当前状态)
+            cell.mantleEnergy = Math.max(0, cell.mantleEnergy - absorbed);
+            
             if (cell.hasThunderstorm) energyInput += thunderstormEnergy;
         }
         
