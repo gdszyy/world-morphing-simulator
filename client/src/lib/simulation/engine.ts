@@ -300,9 +300,11 @@ export class SimulationEngine {
         const targetEnergy = mantleEnergyLevel * energyFluctuation;
         let newEnergy = cell.mantleEnergy * (1 - mantleTimeScale) + targetEnergy * mantleTimeScale;
         
-        // 扩散混合
+        // 扩散混合 (使用更强的扩散系数)
+        // 之前的 0.1 太小，导致扩散不明显。改为 0.4 增加流动性
         if (!isNaN(avgEnergy)) {
-            newEnergy = newEnergy * 0.9 + avgEnergy * 0.1;
+            const diffusionStrength = 0.4;
+            newEnergy = newEnergy * (1 - diffusionStrength) + avgEnergy * diffusionStrength;
         }
         
         // 防止 NaN 或 无限值
