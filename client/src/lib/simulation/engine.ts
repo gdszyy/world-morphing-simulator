@@ -35,7 +35,9 @@ export interface SimulationParams {
   mantleEnergyLevel: number; // 地幔能量等级 (倍率)
   maxRadius: number; // 最大半径限制 (硬限制)
   minRadius: number; // 最小半径限制 (硬限制)
-  distortionSpeed: number; // 噪声扭曲速度
+  distortionSpeed: number;
+  edgeGenerationWidth: number;
+  edgeGenerationEnergy: number; // 噪声扭曲速度
   
   // 气候层参数
   diffusionRate: number;
@@ -62,6 +64,8 @@ export const DEFAULT_PARAMS: SimulationParams = {
   maxRadius: 22.0,
   minRadius: 5.0,
   distortionSpeed: 0.01,
+  edgeGenerationWidth: 2,
+  edgeGenerationEnergy: 0.5,
   
   // 气候层
   diffusionRate: 0.05,
@@ -246,6 +250,48 @@ export class SimulationEngine {
       }
     }
     
+    // 边缘能量生成机制 (补丁)
+    const { edgeGenerationWidth, edgeGenerationEnergy } = this.params;
+    if (edgeGenerationEnergy > 0) {
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                const cell = this.grid[y][x];
+                if (!cell.exists) continue;
+
+                // 检查是否在边缘 n 格范围内
+                // 简单算法：如果 n 格内有不存在的邻居，则视为边缘
+                // 为了性能，我们只检查直接邻居，然后通过扩散传播
+                // 或者更精确地：BFS 搜索最近的空地块距离
+                
+                // 这里采用简化版：如果周围 edgeGenerationWidth 范围内有空地块
+                let isNearEdge = false;
+                const range = Math.floor(edgeGenerationWidth);
+                
+                check_edge:
+                for (let dy = -range; dy <= range; dy++) {
+                    for (let dx = -range; dx <= range; dx++) {
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height) {
+                            if (!this.grid[ny][nx].exists) {
+                                isNearEdge = true;
+                                break check_edge;
+                            }
+                        } else {
+                            // 地图边界也视为边缘
+                            isNearEdge = true;
+                            break check_edge;
+                        }
+                    }
+                }
+
+                if (isNearEdge) {
+                    cell.mantleEnergy += edgeGenerationEnergy;
+                }
+            }
+        }
+    }
+
     // 边缘扩张/缩减逻辑 (保持不变，但基于新的能量分布)
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {

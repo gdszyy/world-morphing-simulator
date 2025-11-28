@@ -462,6 +462,8 @@ export default function Home() {
                 <ParamControl label="最大半径" paramKey="maxRadius" min={10} max={40} step={1} />
                 <ParamControl label="最小半径" paramKey="minRadius" min={0} max={20} step={1} />
                 <ParamControl label="扭曲速度" paramKey="distortionSpeed" min={0} max={0.05} step={0.001} />
+                <ParamControl label="边缘生成宽度" paramKey="edgeGenerationWidth" min={0} max={5} step={1} />
+                <ParamControl label="边缘生成能量" paramKey="edgeGenerationEnergy" min={0} max={10} step={0.1} />
               </div>
               
               {/* 气候层参数 */}
