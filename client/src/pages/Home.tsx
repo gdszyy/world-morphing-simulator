@@ -42,6 +42,7 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   edgeSupplyPointCount: { desc: "边缘能量供给点的数量", impact: "高：多点供给 / 低：少点供给" },
   edgeSupplyPointSpeed: { desc: "边缘供给点的迁移速度", impact: "高：供给点移动快 / 低：供给点移动慢" },
   mantleHeatFactor: { desc: "地幔热量系数", impact: "影响地幔能量转化为地表温度的效率" },
+  mantleHeatingRate: { desc: "地幔加热速率", impact: "高: 地表温度紧跟地幔 / 低: 地表温度受风影响大" },
   
   // 人类层参数
   humanMinTemp: { desc: "人类适宜生存的最低温度", impact: "高: 只能在温暖区域生存 / 低: 耐寒能力强" },
@@ -994,6 +995,7 @@ export default function Home() {
                 <ParamControl label="供给点数量(需重启)" paramKey="edgeSupplyPointCount" min={1} max={10} step={1} />
                 <ParamControl label="供给点迁移速度" paramKey="edgeSupplyPointSpeed" min={0} max={0.5} step={0.01} />
                 <ParamControl label="地幔热量系数" paramKey="mantleHeatFactor" min={0} max={200} step={1} />
+                <ParamControl label="地幔加热速率" paramKey="mantleHeatingRate" min={0} max={0.1} step={0.001} />
               </div>
               
               {/* 气候层参数 */}

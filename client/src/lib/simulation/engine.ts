@@ -128,6 +128,8 @@ export interface SimulationParams {
   edgeSupplyPointSpeed: number;
   /** 地幔热量系数：地幔能量转化为地表温度的比例 */
   mantleHeatFactor: number;
+  /** 地幔加热速率：地表温度向地幔目标温度靠拢的速度 (耦合度) */
+  mantleHeatingRate: number;
   
   // --- 气候层参数 (Climate Layer) ---
   /** 温度扩散率：相邻地块热量交换的速度 */
@@ -227,6 +229,7 @@ export const DEFAULT_PARAMS: SimulationParams = {
   edgeSupplyPointCount: 6,
   edgeSupplyPointSpeed: 0.05,
   mantleHeatFactor: 197,
+  mantleHeatingRate: 0.005,
   
   // 气候层
   diffusionRate: 0.2,
@@ -690,7 +693,7 @@ export class SimulationEngine {
    * 3. 灾害天气：在高能且温度梯度大的区域生成雷暴
    */
   updateClimateLayer() {
-    const { diffusionRate, advectionRate, thunderstormThreshold, mantleHeatFactor } = this.params;
+    const { diffusionRate, advectionRate, thunderstormThreshold, mantleHeatFactor, mantleHeatingRate } = this.params;
     
     const newTemps = this.grid.map(row => row.map(c => c.temperature));
     
@@ -708,9 +711,9 @@ export class SimulationEngine {
         // 2. 地幔加热
         // 地幔能量转化为热量，作为目标温度
         // 优化：大幅降低地幔耦合度，使气候层有更多独立演化空间
-        // 之前的 0.01 仍然可能导致温度分布过于静态。改为 0.005，让热量更多由平流主导
+        // 使用参数控制耦合速率
         const targetTemp = -100 + (cell.mantleEnergy / 100) * mantleHeatFactor;
-        newTemp = newTemp * 0.995 + targetTemp * 0.005;
+        newTemp = newTemp * (1 - mantleHeatingRate) + targetTemp * mantleHeatingRate;
         
         // 3. 模拟热平流 (Heat Advection)
         // 真正的对流不仅仅是冷却，而是热量的移动。
