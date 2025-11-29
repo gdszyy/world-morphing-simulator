@@ -707,18 +707,43 @@ export class SimulationEngine {
         
         // 2. 地幔加热
         // 地幔能量转化为热量，作为目标温度
+        // 优化：增加热惯性，使加热过程更平滑
         const targetTemp = -100 + (cell.mantleEnergy / 100) * mantleHeatFactor;
-        newTemp = newTemp * 0.9 + targetTemp * 0.1;
+        // 之前的 0.1 混合率可能太快，导致温度跳变。改为 0.05
+        newTemp = newTemp * 0.95 + targetTemp * 0.05;
         
-        // 3. 环境冷却 (辐射散热)
-        newTemp -= 0.5;
+        // 3. 模拟热对流 (Thermal Convection)
+        // 热空气上升（向外扩散），冷空气下降（向内聚集）
+        // 在二维网格中，我们模拟为：高温区域向低温区域的额外热流
+        // 并且加入"风"的概念：温度梯度产生风，风带走热量
+        
+        // 计算局部温度梯度
+        const gradientX = (this.grid[y][Math.min(x + 1, this.width - 1)].temperature - this.grid[y][Math.max(x - 1, 0)].temperature) / 2;
+        const gradientY = (this.grid[Math.min(y + 1, this.height - 1)][x].temperature - this.grid[Math.max(y - 1, 0)][x].temperature) / 2;
+        const gradientMag = Math.sqrt(gradientX * gradientX + gradientY * gradientY);
+        
+        // 对流冷却效应：梯度越大（风越大），散热越快
+        // 这模拟了风带走热量的效果
+        const convectionCooling = gradientMag * 0.1; 
+        newTemp -= convectionCooling;
+
+        // 4. 环境冷却 (辐射散热)
+        // 优化：基于 Stefan-Boltzmann 定律的简化版，温度越高散热越快
+        // 之前的固定 -0.5 不够真实
+        // 假设环境背景温度为 -273 (绝对零度) 或 -100 (模拟设定)
+        // 散热速率与 (T - T_env) 成正比
+        const coolingRate = 0.01;
+        const ambientTemp = -100;
+        newTemp -= (newTemp - ambientTemp) * coolingRate;
         
         newTemps[y][x] = newTemp;
         
-        // 4. 雷暴判定
-        // 触发条件：局部温度梯度大 (对流强)
+        // 5. 雷暴判定
+        // 触发条件：局部温度梯度大 (对流强) 且 温度较高 (有能量)
+        // 优化：加入温度门槛，低温下即使有梯度也很难形成雷暴
         const tempDiff = Math.abs(cell.temperature - avgTemp);
-        if (tempDiff > thunderstormThreshold && Math.random() < 0.1) {
+        // 只有当温度 > -50 且梯度大时才触发
+        if (cell.temperature > -50 && tempDiff > thunderstormThreshold && Math.random() < 0.15) {
             cell.hasThunderstorm = true;
         } else {
             cell.hasThunderstorm = false;
