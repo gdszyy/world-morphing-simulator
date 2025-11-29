@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { DEFAULT_PARAMS, SimulationEngine, SimulationParams } from "@/lib/simulation/engine";
+import { DEFAULT_PARAMS, SimulationEngine, SimulationParams, Cell } from "@/lib/simulation/engine";
 import * as d3 from "d3";
 import { FastForward, HelpCircle, Pause, Play, RefreshCw, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -70,7 +70,7 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   humanRespawnDelay: { desc: "人类重生延迟", impact: "人类灭绝后等待多少步才重生" },
   bioAutoSpawnCount: { desc: "自动生成阈值", impact: "当物种数量少于此值时触发自动生成" },
   bioAutoSpawnInterval: { desc: "自动生成间隔", impact: "每隔多少步尝试自动生成新物种" },
-};
+} as Record<keyof SimulationParams, { desc: string; impact: string; }>;
 
 export default function Home() {
   // Config Manager
@@ -533,6 +533,31 @@ export default function Home() {
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 1;
         ctx.strokeRect(px - 2, py - 2, cellSize + 4, cellSize + 4);
+    }
+
+    // Draw Migrants (Overlay on Bio or Combined layer)
+    if (activeLayer === 'bio' || activeLayer === 'combined') {
+        for (let y = 0; y < engine.height; y++) {
+            for (let x = 0; x < engine.width; x++) {
+                const cell = engine.grid[y][x];
+                if (!cell.exists || !cell.migrant) continue;
+
+                const px = x * cellSize;
+                const py = y * cellSize;
+                const migrant = cell.migrant;
+                
+                // Draw Migrant as a small circle or dot
+                ctx.fillStyle = migrant.attributes.color || '#ffffff';
+                ctx.beginPath();
+                ctx.arc(px + cellSize / 2, py + cellSize / 2, cellSize / 3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Optional: Add a border to distinguish from settlements
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+        }
     }
 
     // Draw Energy Flow (Overlay on Crystal or Combined layer)

@@ -77,12 +77,23 @@ export interface Cell {
   energyFlow: { x: number, y: number, amount: number }[];
 
   // --- 生物层 (Bio Layer) ---
-  /** 生物繁荣度 (生命值/人口) */
+  /** 生物聚落繁荣度 (仅当 crystalState === 'BIO' 时有效) */
   prosperity: number;
-  /** 是否正在开采相邻的 Beta 晶石 */
+  /** 是否正在开采相邻的 Beta 晶石 (仅聚落有效) */
   isMining: boolean;
-  /** 生物种群属性 (仅当 crystalState === 'BIO' 时有效) */
+  /** 生物聚落属性 (仅当 crystalState === 'BIO' 时有效) */
   bioAttributes?: BioAttributes;
+
+  /** 
+   * 迁徙生物 (Migrant)
+   * 独立于晶石/聚落层，可以与任何方块共存
+   */
+  migrant?: {
+    prosperity: number;
+    attributes: BioAttributes;
+    /** 迁徙目标 (如果有) */
+    target?: {x: number, y: number};
+  } | null;
 }
 
 /**
@@ -326,6 +337,7 @@ export class SimulationEngine {
           energyFlow: [],
           prosperity: 0,
           isMining: false,
+          migrant: null,
         });
       }
       grid.push(row);
@@ -811,144 +823,206 @@ export class SimulationEngine {
         this.bioExtinctionStep = null;
     }
 
-    // 3. 更新生物状态
-    const changes: {x: number, y: number, type: 'PROSPERITY' | 'STATE' | 'MIGRATE' | 'MINING_STATE' | 'NEW_BIO', value?: any, toX?: number, toY?: number}[] = [];
+    // 3. 更新生物状态 (聚落与迁徙者)
+    const changes: {x: number, y: number, type: 'PROSPERITY' | 'STATE' | 'MIGRATE' | 'MINING_STATE' | 'NEW_BIO' | 'MIGRANT_UPDATE' | 'MIGRANT_REMOVE' | 'MIGRANT_ADD', value?: any, toX?: number, toY?: number}[] = [];
 
     for (let y = 0; y < this.height; y++) {
         for (let x = 0; x < this.width; x++) {
             const cell = this.grid[y][x];
-            if (cell.crystalState !== 'BIO' || !cell.bioAttributes) continue;
-
-            const attrs = cell.bioAttributes;
-
-            // A. 温度检查 (生存极限)
-            if (cell.temperature < attrs.survivalMinTemp || cell.temperature > attrs.survivalMaxTemp) {
-                changes.push({x, y, type: 'STATE', value: 0}); // 死亡
-                // 灭绝奖励
-                this.distributeExtinctionBonus(x, y, extinctionBonus);
-                continue;
-            }
-
-            // B. 繁荣度更新
-            let prosperityChange = 0;
-            if (cell.temperature >= attrs.minTemp && cell.temperature <= attrs.maxTemp) {
-                let growth = attrs.prosperityGrowth;
-                // 规则：非人类生物(ID!=0)的繁荣度增长必须 >= minProsperityGrowth
-                if (attrs.speciesId !== 0) {
-                    growth = Math.max(growth, this.params.minProsperityGrowth);
-                }
-                prosperityChange += growth;
-            } else {
-                prosperityChange -= attrs.prosperityDecay;
-            }
-
-            // 邻居影响
             const neighbors = this.getNeighbors(x, y);
-            const bioNeighbors = neighbors.filter(n => n.crystalState === 'BIO' && n.bioAttributes);
-            
-            // 同种群加成，异种群惩罚
-            for (const n of bioNeighbors) {
-                if (n.bioAttributes!.speciesId === attrs.speciesId) {
-                    prosperityChange += this.params.sameSpeciesBonus;
+
+            // --- 3.1 处理生物聚落 (Settlement) ---
+            if (cell.crystalState === 'BIO' && cell.bioAttributes) {
+                const attrs = cell.bioAttributes;
+
+                // A. 温度检查 (生存极限)
+                if (cell.temperature < attrs.survivalMinTemp || cell.temperature > attrs.survivalMaxTemp) {
+                    changes.push({x, y, type: 'STATE', value: 0}); // 死亡
+                    this.distributeExtinctionBonus(x, y, extinctionBonus);
+                    continue;
+                }
+
+                // B. 繁荣度更新
+                let prosperityChange = 0;
+                if (cell.temperature >= attrs.minTemp && cell.temperature <= attrs.maxTemp) {
+                    let growth = attrs.prosperityGrowth;
+                    if (attrs.speciesId !== 0) {
+                        growth = Math.max(growth, this.params.minProsperityGrowth);
+                    }
+                    prosperityChange += growth;
                 } else {
-                    // 竞争：繁荣度低的一方受到惩罚
-                    if (cell.prosperity < n.prosperity) {
-                        prosperityChange -= competitionPenalty;
+                    prosperityChange -= attrs.prosperityDecay;
+                }
+
+                // 邻居影响 (聚落间的竞争与协作)
+                const bioNeighbors = neighbors.filter(n => n.crystalState === 'BIO' && n.bioAttributes);
+                for (const n of bioNeighbors) {
+                    if (n.bioAttributes!.speciesId === attrs.speciesId) {
+                        prosperityChange += this.params.sameSpeciesBonus;
+                    } else {
+                        // 竞争：只对繁荣度低于自己的邻居造成伤害
+                        if (cell.prosperity > n.prosperity) {
+                            // 繁荣度差值越大，伤害概率越大 (这里简化为直接扣除繁荣度)
+                            const diff = cell.prosperity - n.prosperity;
+                            const damage = competitionPenalty * (1 + diff / 100);
+                            // 注意：这里我们不能直接修改邻居，只能修改自己受到的反作用力或者通过后续事件处理
+                            // 为了简化，我们假设竞争是双向的，这里只计算自己受到的影响(如果有)
+                            // 实际上，根据需求"只有生物聚落会对会对自己所在块在内的周围的低繁荣度生物块造成伤害"
+                            // 这意味着强者伤害弱者。作为强者(当前cell)，我不受伤害。
+                            // 作为弱者(在遍历到弱者时)，会被强者伤害。
+                        } else if (cell.prosperity < n.prosperity) {
+                             // 我是弱者，被强者(n)伤害
+                             const diff = n.prosperity - cell.prosperity;
+                             const damage = competitionPenalty * (1 + diff / 100);
+                             prosperityChange -= damage;
+                        }
                     }
                 }
-            }
 
-            // Alpha 辐射伤害 (永远大于增长)
-            const alphaNeighbors = neighbors.filter(n => n.crystalState === 'ALPHA');
-            if (alphaNeighbors.length > 0) {
-                // 确保伤害大于最大可能的自然增长
-                const damage = Math.max(attrs.prosperityGrowth + 0.2, this.params.alphaRadiationDamage);
-                prosperityChange -= alphaNeighbors.length * damage;
-            }
+                // Alpha 辐射伤害
+                const alphaNeighbors = neighbors.filter(n => n.crystalState === 'ALPHA');
+                if (alphaNeighbors.length > 0) {
+                    const damage = Math.max(attrs.prosperityGrowth + 0.2, this.params.alphaRadiationDamage);
+                    prosperityChange -= alphaNeighbors.length * damage;
+                }
 
-            // C. 采矿
-            const betaNeighbors = neighbors.filter(n => n.crystalState === 'BETA');
-            let isMining = false;
-            if (betaNeighbors.length > 0) {
-                const target = betaNeighbors[Math.floor(Math.random() * betaNeighbors.length)];
-                changes.push({x: target.x, y: target.y, type: 'STATE', value: 0});
-                prosperityChange += attrs.miningReward;
-                isMining = true;
-            }
-            
-            changes.push({x, y, type: 'MINING_STATE', value: isMining ? 1 : 0});
+                // C. 采矿 (仅聚落可采矿)
+                const betaNeighbors = neighbors.filter(n => n.crystalState === 'BETA');
+                let isMining = false;
+                if (betaNeighbors.length > 0) {
+                    const target = betaNeighbors[Math.floor(Math.random() * betaNeighbors.length)];
+                    changes.push({x: target.x, y: target.y, type: 'STATE', value: 0});
+                    prosperityChange += attrs.miningReward;
+                    isMining = true;
+                }
+                changes.push({x, y, type: 'MINING_STATE', value: isMining ? 1 : 0});
 
-            // 应用繁荣度变化
-            const newProsperity = cell.prosperity + prosperityChange;
-            changes.push({x, y, type: 'PROSPERITY', value: newProsperity});
+                // 应用繁荣度变化
+                const newProsperity = cell.prosperity + prosperityChange;
+                changes.push({x, y, type: 'PROSPERITY', value: newProsperity});
 
-            // D. 死亡判定 (繁荣度 <= 0)
-            if (newProsperity <= 0) {
-                changes.push({x, y, type: 'STATE', value: 0});
-                this.distributeExtinctionBonus(x, y, extinctionBonus);
-                continue;
-            }
+                // D. 死亡判定
+                if (newProsperity <= 0) {
+                    changes.push({x, y, type: 'STATE', value: 0});
+                    this.distributeExtinctionBonus(x, y, extinctionBonus);
+                    continue;
+                }
 
-            // E. 扩张与变异
-            if (newProsperity > attrs.expansionThreshold) {
-                const emptyNeighbors = neighbors.filter(n => n.exists && n.crystalState === 'EMPTY');
-                if (emptyNeighbors.length > 0) {
-                    const target = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
-                    
-                    // 变异逻辑
-                    let newAttrs = {...attrs};
-                    let isNewSpecies = false;
-                    
-                    // 随机变异属性
-                    const keys: (keyof BioAttributes)[] = ['minTemp', 'maxTemp', 'prosperityGrowth', 'prosperityDecay', 'expansionThreshold', 'miningReward', 'migrationThreshold'];
-                    
-                    for (const key of keys) {
-                        if (Math.random() < mutationRate) {
-                            const val = newAttrs[key] as number;
-                            const change = val * mutationStrength * (Math.random() > 0.5 ? 1 : -1);
-                            (newAttrs[key] as number) += change;
-                            
-                            // 检查是否成为新物种
-                            if (Math.abs(change) > Math.abs(val) * newSpeciesThreshold) {
-                                isNewSpecies = true;
+                // E. 扩张 (生成新聚落)
+                if (newProsperity > attrs.expansionThreshold) {
+                    const emptyNeighbors = neighbors.filter(n => n.exists && n.crystalState === 'EMPTY');
+                    if (emptyNeighbors.length > 0) {
+                        const target = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
+                        
+                        // 变异逻辑
+                        let newAttrs = {...attrs};
+                        let isNewSpecies = false;
+                        const keys: (keyof BioAttributes)[] = ['minTemp', 'maxTemp', 'prosperityGrowth', 'prosperityDecay', 'expansionThreshold', 'miningReward', 'migrationThreshold'];
+                        
+                        for (const key of keys) {
+                            if (Math.random() < mutationRate) {
+                                const val = newAttrs[key] as number;
+                                const change = val * mutationStrength * (Math.random() > 0.5 ? 1 : -1);
+                                (newAttrs[key] as number) += change;
+                                if (Math.abs(change) > Math.abs(val) * newSpeciesThreshold) {
+                                    isNewSpecies = true;
+                                }
                             }
                         }
+                        
+                        if (isNewSpecies) {
+                            newAttrs.speciesId = Math.floor(Math.random() * 100000);
+                            newAttrs.color = `hsl(${Math.random() * 360}, 70%, 50%)`;
+                        }
+                        
+                        changes.push({
+                            x: target.x, y: target.y, type: 'NEW_BIO', 
+                            value: { prosperity: 30, attrs: newAttrs }
+                        });
+                        changes.push({x, y, type: 'PROSPERITY', value: newProsperity - 30});
                     }
-                    
-                    if (isNewSpecies) {
-                        newAttrs.speciesId = Math.floor(Math.random() * 100000);
-                        newAttrs.color = `hsl(${Math.random() * 360}, 70%, 50%)`;
-                    }
-                    
+                }
+
+                // F. 迁移转化 (聚落 -> 迁徙者)
+                // 当环境不适宜且无法维持聚落时，转化为迁徙者
+                if (newProsperity < attrs.migrationThreshold && newProsperity > 0) {
+                    // 只有当周围有空地或者可以共存时才迁移，这里简化为直接转化
+                    // 转化后，原聚落消失，变成迁徙者存在于同一格(随后移动)
+                    changes.push({x, y, type: 'STATE', value: 0}); // 移除聚落实体
                     changes.push({
-                        x: target.x, 
-                        y: target.y, 
-                        type: 'NEW_BIO', 
-                        value: { prosperity: 30, attrs: newAttrs }
+                        x, y, type: 'MIGRANT_ADD', 
+                        value: { prosperity: newProsperity, attrs: attrs }
                     });
-                    
-                    changes.push({x, y, type: 'PROSPERITY', value: newProsperity - 30});
                 }
             }
-            
-            // F. 迁移
-            if (newProsperity < attrs.migrationThreshold) {
-                const emptyNeighbors = neighbors.filter(n => n.exists && n.crystalState === 'EMPTY');
-                if (emptyNeighbors.length > 0) {
-                    // 寻找温度最适宜的邻居
-                    let bestTarget = emptyNeighbors[0];
-                    let minTempDiff = Math.abs(bestTarget.temperature - (attrs.minTemp + attrs.maxTemp)/2);
+
+            // --- 3.2 处理迁徙生物 (Migrant) ---
+            if (cell.migrant) {
+                const migrant = cell.migrant;
+                const attrs = migrant.attributes;
+
+                // 迁徙者生存判定 (较宽松，或者消耗繁荣度移动)
+                // 简单起见，迁徙者每步消耗少量繁荣度
+                let newProsperity = migrant.prosperity - 1; 
+
+                if (newProsperity <= 0) {
+                    changes.push({x, y, type: 'MIGRANT_REMOVE'});
+                    // 迁徙者死亡也提供少量能量? 暂不提供以免过于复杂
+                    continue;
+                }
+
+                // 尝试定居 (Settlement)
+                // 如果当前位置是空的(EMPTY)，且温度适宜，则定居
+                if (cell.crystalState === 'EMPTY' && 
+                    cell.temperature >= attrs.minTemp && 
+                    cell.temperature <= attrs.maxTemp) {
                     
-                    for (const n of emptyNeighbors) {
-                        const diff = Math.abs(n.temperature - (attrs.minTemp + attrs.maxTemp)/2);
-                        if (diff < minTempDiff) {
-                            minTempDiff = diff;
-                            bestTarget = n;
+                    changes.push({x, y, type: 'MIGRANT_REMOVE'});
+                    changes.push({
+                        x, y, type: 'NEW_BIO', 
+                        value: { prosperity: newProsperity, attrs: attrs }
+                    });
+                    continue;
+                }
+
+                // 移动逻辑
+                // 寻找温度更好的邻居，且该邻居可以是 EMPTY, ALPHA, BETA, BIO (共存)
+                // 但为了避免重叠过于复杂，我们假设迁徙者只是在Grid上移动的数据层
+                const validNeighbors = neighbors.filter(n => n.exists);
+                if (validNeighbors.length > 0) {
+                    // 简单的贪婪算法：找温度最接近最佳温度的邻居
+                    const bestTemp = (attrs.minTemp + attrs.maxTemp) / 2;
+                    let bestNeighbor = validNeighbors[0];
+                    let minDiff = Math.abs(bestNeighbor.temperature - bestTemp);
+
+                    for (const n of validNeighbors) {
+                        const diff = Math.abs(n.temperature - bestTemp);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            bestNeighbor = n;
                         }
                     }
-                    
-                    changes.push({x: bestTarget.x, y: bestTarget.y, type: 'MIGRATE', value: {prosperity: newProsperity, attrs}, toX: x, toY: y});
-                    changes.push({x, y, type: 'STATE', value: 0});
+
+                    // 移动到最佳邻居 (如果不是当前位置)
+                    if (bestNeighbor.x !== x || bestNeighbor.y !== y) {
+                        changes.push({x, y, type: 'MIGRANT_REMOVE'});
+                        changes.push({
+                            x: bestNeighbor.x, y: bestNeighbor.y, 
+                            type: 'MIGRANT_ADD', 
+                            value: { prosperity: newProsperity, attrs: attrs }
+                        });
+                    } else {
+                        // 原地不动，更新繁荣度
+                        changes.push({
+                            x, y, type: 'MIGRANT_UPDATE', 
+                            value: { prosperity: newProsperity }
+                        });
+                    }
+                } else {
+                     changes.push({
+                        x, y, type: 'MIGRANT_UPDATE', 
+                        value: { prosperity: newProsperity }
+                    });
                 }
             }
         }
@@ -975,11 +1049,23 @@ export class SimulationEngine {
                 cell.bioAttributes = change.value.attrs;
             }
         } else if (change.type === 'MIGRATE') {
+            // Legacy migrate type, should not be used with new logic but kept for safety
             if (cell.crystalState === 'EMPTY') {
                 cell.crystalState = 'BIO';
                 cell.prosperity = change.value.prosperity;
                 cell.bioAttributes = change.value.attrs;
             }
+        } else if (change.type === 'MIGRANT_ADD') {
+            cell.migrant = {
+                prosperity: change.value.prosperity,
+                attributes: change.value.attrs
+            };
+        } else if (change.type === 'MIGRANT_UPDATE') {
+            if (cell.migrant) {
+                cell.migrant.prosperity = change.value.prosperity;
+            }
+        } else if (change.type === 'MIGRANT_REMOVE') {
+            cell.migrant = null;
         }
     }
   }
