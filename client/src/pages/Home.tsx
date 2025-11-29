@@ -71,6 +71,7 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   bioAutoSpawnCount: { desc: "自动生成阈值", impact: "当物种数量少于此值时触发自动生成" },
   bioAutoSpawnInterval: { desc: "自动生成间隔", impact: "每隔多少步尝试自动生成新物种" },
   migrantExpansionProb: { desc: "迁徙生成概率", impact: "聚落扩张时生成迁徙者而非新聚落的概率" },
+  radiationImmunityThreshold: { desc: "辐射免疫阈值", impact: "繁荣度达到此值时完全免疫Alpha辐射伤害" },
 } as Record<keyof SimulationParams, { desc: string; impact: string; }>;
 
 export default function Home() {
@@ -964,6 +965,7 @@ export default function Home() {
                   <ParamControl label="迁移阈值" paramKey="humanMigrationThreshold" min={0} max={100} step={1} />
 
                   <ParamControl label="Alpha辐射伤害" paramKey="alphaRadiationDamage" min={0} max={20} step={0.5} />
+                  <ParamControl label="辐射免疫阈值" paramKey="radiationImmunityThreshold" min={1} max={200} step={1} />
                   <ParamControl label="人类重生延迟" paramKey="humanRespawnDelay" min={10} max={200} step={10} />
                 </div>
                 

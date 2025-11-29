@@ -208,6 +208,8 @@ export interface SimulationParams {
   bioAutoSpawnInterval: number;
   /** 聚落扩张时生成迁徙者的概率 (0-1)，否则生成新聚落 */
   migrantExpansionProb: number;
+  /** Alpha 辐射免疫阈值：繁荣度达到此值时免疫辐射伤害 */
+  radiationImmunityThreshold: number;
 }
 
 export const DEFAULT_PARAMS: SimulationParams = {
@@ -268,6 +270,7 @@ export const DEFAULT_PARAMS: SimulationParams = {
   bioAutoSpawnCount: 5,
   bioAutoSpawnInterval: 10,
   migrantExpansionProb: 0.8,
+  radiationImmunityThreshold: 200,
 };
 
 export class SimulationEngine {
@@ -896,8 +899,18 @@ export class SimulationEngine {
                 // Alpha 辐射伤害
                 const alphaNeighbors = neighbors.filter(n => n.crystalState === 'ALPHA');
                 if (alphaNeighbors.length > 0) {
-                    const damage = Math.max(attrs.prosperityGrowth + 0.2, this.params.alphaRadiationDamage);
-                    prosperityChange -= alphaNeighbors.length * damage;
+                    let baseDamage = Math.max(attrs.prosperityGrowth + 0.2, this.params.alphaRadiationDamage);
+                    
+                    // 动态伤害减免：繁荣度越高，受到的伤害越小
+                    // 当繁荣度达到 radiationImmunityThreshold 时，伤害降为 0
+                    const immunityThreshold = this.params.radiationImmunityThreshold || 200;
+                    const immunityFactor = Math.max(0, 1 - (cell.prosperity / immunityThreshold));
+                    
+                    const finalDamage = baseDamage * immunityFactor;
+                    
+                    if (finalDamage > 0) {
+                        prosperityChange -= alphaNeighbors.length * finalDamage;
+                    }
                 }
 
                 // C. 采矿 (仅聚落可采矿)
