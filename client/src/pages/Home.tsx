@@ -590,6 +590,69 @@ export default function Home() {
         }
         ctx.stroke();
     }
+
+    // Draw Wind Direction (Overlay on Climate layer)
+    if (activeLayer === 'climate') {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.lineWidth = 1;
+        
+        // 采样绘制，避免过于密集
+        const step = 2; 
+        
+        for (let y = 1; y < engine.height - 1; y += step) {
+            for (let x = 1; x < engine.width - 1; x += step) {
+                const cell = engine.grid[y][x];
+                if (!cell.exists) continue;
+                
+                // 计算局部温度梯度 (风向)
+                // 风从高温吹向低温 (对流)
+                // 实际上热空气上升产生低压，冷空气补充过来。
+                // 但在我们的简化模型中，我们模拟的是"热流"方向，即高温 -> 低温
+                
+                const tLeft = engine.grid[y][x-1].temperature;
+                const tRight = engine.grid[y][x+1].temperature;
+                const tUp = engine.grid[y-1][x].temperature;
+                const tDown = engine.grid[y+1][x].temperature;
+                
+                // 梯度方向：指向温度更高的地方
+                const gradX = (tRight - tLeft) / 2;
+                const gradY = (tDown - tUp) / 2;
+                
+                // 风向：指向温度更低的地方 (热流扩散方向)
+                // 或者如果我们模拟的是"风"，风通常由气压梯度力驱动。
+                // 简单起见，我们可视化"热流扩散方向"，即 -Gradient
+                const flowX = -gradX;
+                const flowY = -gradY;
+                
+                const magnitude = Math.sqrt(flowX * flowX + flowY * flowY);
+                
+                // 只绘制显著的风
+                if (magnitude > 0.5) {
+                    const cx = x * cellSize + cellSize / 2;
+                    const cy = y * cellSize + cellSize / 2;
+                    
+                    // 归一化并缩放
+                    const scale = Math.min(cellSize * 1.5, magnitude * 2); 
+                    const dx = (flowX / magnitude) * scale;
+                    const dy = (flowY / magnitude) * scale;
+                    
+                    // 绘制箭头
+                    ctx.beginPath();
+                    ctx.moveTo(cx, cy);
+                    ctx.lineTo(cx + dx, cy + dy);
+                    
+                    // 箭头头部
+                    const angle = Math.atan2(dy, dx);
+                    const headLen = scale * 0.3;
+                    ctx.lineTo(cx + dx - headLen * Math.cos(angle - Math.PI / 6), cy + dy - headLen * Math.sin(angle - Math.PI / 6));
+                    ctx.moveTo(cx + dx, cy + dy);
+                    ctx.lineTo(cx + dx - headLen * Math.cos(angle + Math.PI / 6), cy + dy - headLen * Math.sin(angle + Math.PI / 6));
+                    
+                    ctx.stroke();
+                }
+            }
+        }
+    }
     
     ctx.restore();
   };
