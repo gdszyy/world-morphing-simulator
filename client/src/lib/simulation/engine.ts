@@ -277,7 +277,7 @@ export class SimulationEngine {
   
   noiseOffsetX: number;
   noiseOffsetY: number;
-  edgeSupplyPoints: { angle: number, speed: number }[];
+  edgeSupplyPoints: { angle: number, speed: number, phase: number, frequency: number }[];
   
   // 生物重生控制
   bioExtinctionStep: number | null = null;
@@ -296,7 +296,9 @@ export class SimulationEngine {
     const baseSpeed = params.edgeSupplyPointSpeed || 0.05;
     this.edgeSupplyPoints = Array(count).fill(0).map((_, i) => ({
       angle: (i / count) * Math.PI * 2, // 均匀分布角度
-      speed: baseSpeed // 统一旋转速度，确保整体旋转
+      speed: baseSpeed, // 基础旋转速度
+      phase: Math.random() * Math.PI * 2, // 随机相位
+      frequency: 0.5 + Math.random() * 1.5 // 随机频率
     }));
     this.grid = this.initializeGrid();
   }
@@ -376,7 +378,12 @@ export class SimulationEngine {
     for (const point of this.edgeSupplyPoints) {
         // 使用参数中的速度，确保实时更新生效
         point.speed = supplySpeed;
-        point.angle += point.speed;
+        
+        // 添加随机摆动
+        // 使用正弦波叠加基础速度，产生忽快忽慢或轻微往复的效果
+        const oscillation = Math.sin(this.timeStep * 0.01 * point.frequency + point.phase) * 0.02;
+        
+        point.angle += point.speed + oscillation;
         if (point.angle > Math.PI * 2) point.angle -= Math.PI * 2;
         if (point.angle < 0) point.angle += Math.PI * 2;
     }
