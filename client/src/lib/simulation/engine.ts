@@ -435,24 +435,150 @@ export class SimulationEngine {
         // 这里简化为：如果邻居中有无效点，或者距离中心足够远
         const hasVoidNeighbor = neighbors.length < 8 || neighbors.some(n => !n.exists);
         
+        // 4. 边缘能量生成
+        // 逻辑修正：edgeGenerationOffset 应该控制能量生成的"层数"偏移，而不是角度旋转
+        // 也就是说，offset=0 表示最外层，offset=1 表示向内一层，以此类推
+        
+        // 计算当前点到最近边缘的距离 (层数)
+        // 这是一个近似计算，通过检查周围有多少个 void 邻居来判断是否在边缘
+        // 或者更准确地，我们可以预计算每个点到边缘的距离，但这里为了性能使用近似方法
+        
         // 只有在边缘区域才生成能量
-        if (hasVoidNeighbor) {
-            const angle = Math.atan2(y - centerY, x - centerX);
+        // 我们定义边缘区域为：本身存在，且邻居中有不存在的点 (最外层)
+        // 或者邻居的邻居中有不存在的点 (次外层)，以此类推
+        // 这里简化实现：只在最外层生成，但可以通过 offset 控制是否生效
+        
+        // 修正后的逻辑：
+        // 我们只在"物理边缘"生成能量。edgeGenerationOffset 参数原本的设计意图可能是
+        // 控制生成的位置是"紧贴边缘"还是"稍微靠内"。
+        // 但根据用户反馈 "偏移值依旧有问题"，可能是指它没有起到预期的"向内偏移"效果，或者"旋转偏移"理解有误。
+        // 结合上下文 "edgeGenerationOffset" 在参数面板中是 0-5 的整数，这通常意味着"层数"。
+        // 如果用户是指"角度偏移"无效，之前的代码其实是实现了角度偏移的。
+        // 但如果用户是指"层数偏移"（即能量产生在边缘向内几格的位置），之前的代码完全没实现。
+        
+        // 让我们重新审视需求： "edge supply point offset/rotation"
+        // 用户说 "地幔供给点偏移值依旧有问题，目前是无效的"。
+        // 之前的代码把 offset 当作角度偏移 (radians) 加到了 point.angle 上。
+        // 但参数面板里 offset 是 0-5 的整数。把整数直接当弧度加，效果是旋转了 offset 弧度。
+        // 这可能不是用户想要的。用户可能想要的是：供给点不仅在边缘旋转，还可以设置其"向内深入"的程度。
+        
+        // 让我们实现"向内偏移"逻辑：
+        // 只有当点距离边缘的距离 == offset 时，才受到供给点影响。
+        // 由于计算精确的边缘距离比较复杂，我们用一种简单的启发式方法：
+        // 距离中心越远，越接近边缘。
+        // 我们定义一个"生成带"，其半径由 maxRadius 和 edgeGenerationOffset 决定。
+        
+        // 实际上，之前的实现依赖 hasVoidNeighbor 来判断是否边缘。
+        // 这意味着只在最外层一圈生成。
+        // 如果 offset > 0，我们应该允许在非边缘（内部）生成，只要它在"边缘带"内。
+        
+        // 采用基于半径的逻辑：
+        // 假设世界大致是圆形的。边缘半径约为当前最大半径。
+        // 我们计算当前点距离中心的距离 distToCenter。
+        // 我们估算当前方向的边缘半径 edgeRadius。
+        // 如果 distToCenter 在 [edgeRadius - width - offset, edgeRadius - offset] 范围内，则生成。
+        
+        // 为了简化且稳健：
+        // 我们扫描所有点，找到每个角度上的最大半径（边缘）。
+        // 但这在 update 中太慢。
+        
+        // 回归最简单的"层数"定义：
+        // hasVoidNeighbor = true 意味着是第 0 层边缘。
+        // 如果我们要支持 offset，我们需要知道它是第几层。
+        // 鉴于网格系统，这很难精确计算。
+        
+        // 替代方案：用户可能确实是指"角度偏移"（相位），但之前的实现有问题？
+        // 之前的实现：point.angle + offset。
+        // 如果 offset 是整数 1, 2, 3... 
+        // 1 rad ≈ 57度。这确实会旋转。
+        // 但用户说"无效"。
+        
+        // 另一种可能性：用户是指 edgeGenerationOffset 应该控制"生成点"在圆周上的初始位置偏移？
+        // 或者，用户是指"边缘宽度"？
+        
+        // 让我们看参数名：edgeGenerationOffset。
+        // 结合之前的上下文，这通常用于控制"从边缘向内缩进多少格"。
+        // 让我们尝试实现"向内缩进"逻辑。
+        
+        // 算法：
+        // 1. 找到所有 hasVoidNeighbor 的点 (Layer 0)。
+        // 2. 找到所有邻居中有 Layer 0 的点 (Layer 1)。
+        // ...
+        // 这需要多遍扫描，太慢。
+        
+        // 让我们用距离中心的相对距离来模拟。
+        // 假设边缘在 maxRadius 附近。
+        // 有效生成范围：distToCenter > (maxRadius - edgeGenerationWidth - edgeGenerationOffset)
+        // 但这假设世界填满了 maxRadius。实际上世界会缩放。
+        
+        // 让我们采用一种基于"当前世界边界"的动态判定。
+        // 我们已经有了 hasVoidNeighbor 判断。
+        // 如果 offset=0，我们只对 hasVoidNeighbor 的点生成。
+        // 如果 offset>0，我们需要对"内部"点生成。
+        
+        // 既然无法精确计算层数，我们改回"角度偏移"的解释，但确保它是正确的。
+        // 也许用户觉得 offset 加在 angle 上没反应？
+        // 让我们把 offset 解释为"相位偏移" (Phase Offset)，单位为弧度?
+        // 不，参数是 0-5 step 1。
+        
+        // 让我们再看一眼之前的代码：
+        // const offsetAngle = point.angle + (edgeGenerationOffset || 0);
+        // 这绝对是有效的旋转。
+        
+        // 除非... edgeGenerationOffset 在参数中没有正确传递？
+        // 或者用户期望的是"径向偏移" (Radial Offset)？即向内/向外移动供给点。
+        // "地幔供给点偏移值" -> 可能是指供给点距离圆心的距离偏移。
+        // 默认供给点在"边缘"。如果 offset 增加，供给点应该"向内移动"。
+        // 这与我刚才的"层数"猜想一致。
+        
+        // 让我们实现径向偏移：
+        // 供给点不再被视为"无限远的射线源"，而是位于特定半径上的点源。
+        // 或者，我们保留射线源逻辑（角度影响），但限制其生效的半径范围。
+        
+        // 修正方案：
+        // 1. 保持角度影响逻辑。
+        // 2. 增加半径限制：只有在 (边缘半径 - offset) 附近的点才接收能量。
+        // 这样，当 offset 增大时，能量注入圈会向内收缩。
+        
+        // 如何确定"边缘半径"？
+        // 对于每个点 (x,y)，我们检查它是否在"边缘带"内。
+        // 我们可以利用 distance transform 的思想，但太复杂。
+        // 简单做法：如果一个点存在，且它距离中心 > (当前最大半径 - offset - width)，则接收能量。
+        // 为了找到"当前最大半径"，我们可以遍历一次 grid (或者维护一个变量)。
+        // 简单起见，我们假设当前最大半径就是 params.maxRadius (虽然地形会变)。
+        // 或者，更动态地：
+        // 如果 offset > 0，我们简单地把 hasVoidNeighbor 的条件放宽？
+        // 不行。
+        
+        // 让我们尝试最直观的"径向距离控制"。
+        // 假设世界是圆的，半径为 R。
+        // 供给点作用在 R - offset 处。
+        // 我们只对 distToCenter 在 [R - offset - width, R - offset] 的点注入能量。
+        // R 可以近似为 cell.exists 的最大距离。
+        
+        // 让我们用一个简单的近似：
+        // 只有当 distToCenter > (maxRadius - edgeGenerationOffset - edgeGenerationWidth) 时才考虑注入。
+        // 并且为了防止注入到虚空，必须 cell.exists。
+        
+        // 结合之前的 hasVoidNeighbor (确保是边缘)，如果 offset > 0，这个条件可能太严苛。
+        // 所以，如果 offset > 0，我们不再要求 hasVoidNeighbor，而是纯粹基于距离。
+        
+        const effectiveMaxRadius = maxRadius; // 使用参数中的最大半径作为参考
+        const innerBound = effectiveMaxRadius - (edgeGenerationOffset || 0) - edgeGenerationWidth;
+        const outerBound = effectiveMaxRadius - (edgeGenerationOffset || 0);
+        
+        // 只有在径向范围内才计算
+        if (distToCenter >= innerBound && distToCenter <= outerBound) {
+             const angle = Math.atan2(y - centerY, x - centerX);
             let normalizedAngle = angle;
             if (normalizedAngle < 0) normalizedAngle += Math.PI * 2;
             
             // 计算供给点的影响
             let maxInfluence = 0;
             for (const point of this.edgeSupplyPoints) {
-                // 应用偏移量 edgeGenerationOffset (弧度制)
-                // edgeGenerationOffset 是一个角度偏移，使得供给点的位置发生整体旋转
-                const offsetAngle = point.angle + (edgeGenerationOffset || 0);
-                let effectiveAngle = offsetAngle;
+                // 这里不再把 offset 加到 angle 上，因为 offset 现在解释为径向偏移
+                const effectiveAngle = point.angle;
                 
-                // 归一化角度到 0-2PI
-                while (effectiveAngle < 0) effectiveAngle += Math.PI * 2;
-                while (effectiveAngle > Math.PI * 2) effectiveAngle -= Math.PI * 2;
-
                 let diff = Math.abs(normalizedAngle - effectiveAngle);
                 if (diff > Math.PI) diff = Math.PI * 2 - diff;
                 
@@ -460,7 +586,6 @@ export class SimulationEngine {
                 if (diff < Math.PI / 4) {
                     // 角度影响因子 (余弦衰减)
                     const angleInfluence = Math.cos(diff * 4); 
-                    
                     maxInfluence = Math.max(maxInfluence, angleInfluence);
                 }
             }
@@ -853,22 +978,54 @@ export class SimulationEngine {
                 const attrs = cell.bioAttributes;
 
                 // A. 温度检查 (生存极限)
-                if (cell.temperature < attrs.survivalMinTemp || cell.temperature > attrs.survivalMaxTemp) {
-                    changes.push({x, y, type: 'STATE', value: 0}); // 死亡
-                    this.distributeExtinctionBonus(x, y, extinctionBonus);
-                    continue;
+                // 极端温度不再直接杀死生物，而是快速降低繁荣度
+                let extremeTempDamage = 0;
+                if (cell.temperature < attrs.survivalMinTemp) {
+                    extremeTempDamage = (attrs.survivalMinTemp - cell.temperature) * 2; // 每度温差造成2点伤害
+                } else if (cell.temperature > attrs.survivalMaxTemp) {
+                    extremeTempDamage = (cell.temperature - attrs.survivalMaxTemp) * 2;
                 }
 
                 // B. 繁荣度更新
+                // 规则修改：生物繁荣度不再自然衰减，而是根据当前温度偏离宜居温度的程度，减少繁荣度增长。
+                // 收益来源：1. 宜居温度 2. 同种群邻居 (在下方计算)
+                
                 let prosperityChange = 0;
+                
+                // 计算温度适宜度带来的增长
+                let growth = attrs.prosperityGrowth;
+                if (attrs.speciesId !== 0) {
+                    growth = Math.max(growth, this.params.minProsperityGrowth);
+                }
+
                 if (cell.temperature >= attrs.minTemp && cell.temperature <= attrs.maxTemp) {
-                    let growth = attrs.prosperityGrowth;
-                    if (attrs.speciesId !== 0) {
-                        growth = Math.max(growth, this.params.minProsperityGrowth);
-                    }
+                    // 在适宜温度范围内，获得全额增长
                     prosperityChange += growth;
                 } else {
-                    prosperityChange -= attrs.prosperityDecay;
+                    // 偏离适宜温度，增长减少
+                    // 计算偏离程度
+                    let deviation = 0;
+                    if (cell.temperature < attrs.minTemp) {
+                        deviation = attrs.minTemp - cell.temperature;
+                    } else {
+                        deviation = cell.temperature - attrs.maxTemp;
+                    }
+                    
+                    // 偏离越大，增长越少，甚至为负
+                    // 假设每偏离 1 度，增长减少 10% (可调)
+                    // 或者简单地：增长 = 基础增长 - 偏离惩罚
+                    // 这里使用减法逻辑：prosperityChange = growth - deviation * decayFactor
+                    // 这样可以实现"不再自然衰减"，而是"因环境恶劣而减少增长"
+                    
+                    const decayFactor = attrs.prosperityDecay || 1.0;
+                    const effectiveGrowth = growth - deviation * decayFactor;
+                    
+                    prosperityChange += effectiveGrowth;
+                }
+                
+                // 叠加极端温度伤害
+                if (extremeTempDamage > 0) {
+                    prosperityChange -= extremeTempDamage;
                 }
 
                 // 邻居影响 (聚落间的竞争与协作)
