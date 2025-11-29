@@ -707,25 +707,60 @@ export class SimulationEngine {
         
         // 2. 地幔加热
         // 地幔能量转化为热量，作为目标温度
-        // 优化：增加热惯性，使加热过程更平滑
+        // 优化：大幅降低地幔耦合度，使气候层有更多独立演化空间
+        // 之前的 0.01 仍然可能导致温度分布过于静态。改为 0.005，让热量更多由平流主导
         const targetTemp = -100 + (cell.mantleEnergy / 100) * mantleHeatFactor;
-        // 之前的 0.1 混合率可能太快，导致温度跳变。改为 0.05
-        newTemp = newTemp * 0.95 + targetTemp * 0.05;
+        newTemp = newTemp * 0.995 + targetTemp * 0.005;
         
-        // 3. 模拟热对流 (Thermal Convection)
-        // 热空气上升（向外扩散），冷空气下降（向内聚集）
-        // 在二维网格中，我们模拟为：高温区域向低温区域的额外热流
-        // 并且加入"风"的概念：温度梯度产生风，风带走热量
+        // 3. 模拟热平流 (Heat Advection)
+        // 真正的对流不仅仅是冷却，而是热量的移动。
+        // 我们需要计算风场，并让风携带热量移动。
         
-        // 计算局部温度梯度
-        const gradientX = (this.grid[y][Math.min(x + 1, this.width - 1)].temperature - this.grid[y][Math.max(x - 1, 0)].temperature) / 2;
-        const gradientY = (this.grid[Math.min(y + 1, this.height - 1)][x].temperature - this.grid[Math.max(y - 1, 0)][x].temperature) / 2;
-        const gradientMag = Math.sqrt(gradientX * gradientX + gradientY * gradientY);
+        // 计算局部温度梯度 (驱动风)
+        const tLeft = this.grid[y][Math.max(x - 1, 0)].temperature;
+        const tRight = this.grid[y][Math.min(x + 1, this.width - 1)].temperature;
+        const tUp = this.grid[Math.max(y - 1, 0)][x].temperature;
+        const tDown = this.grid[Math.min(y + 1, this.height - 1)][x].temperature;
         
-        // 对流冷却效应：梯度越大（风越大），散热越快
-        // 这模拟了风带走热量的效果
-        const convectionCooling = gradientMag * 0.1; 
-        newTemp -= convectionCooling;
+        const gradientX = (tRight - tLeft) / 2;
+        const gradientY = (tDown - tUp) / 2;
+        
+        // 风向：从高温吹向低温 (热扩散方向)
+        // 风速：与梯度成正比
+        // 增加风速系数，使热量移动更明显
+        const windX = -gradientX * 2.0; 
+        const windY = -gradientY * 2.0;
+        
+        // 平流计算：逆风向采样温度
+        // T_new = T_old - (v * grad T)
+        // 简单的一阶迎风格式 (Upwind Scheme)
+        
+        // 找到上游位置
+        const srcX = Math.max(0, Math.min(this.width - 1, x - windX));
+        const srcY = Math.max(0, Math.min(this.height - 1, y - windY));
+        
+        // 双线性插值获取上游温度
+        const x0 = Math.floor(srcX);
+        const x1 = Math.min(x0 + 1, this.width - 1);
+        const y0 = Math.floor(srcY);
+        const y1 = Math.min(y0 + 1, this.height - 1);
+        
+        const wx = srcX - x0;
+        const wy = srcY - y0;
+        
+        const t00 = this.grid[y0][x0].temperature;
+        const t10 = this.grid[y0][x1].temperature;
+        const t01 = this.grid[y1][x0].temperature;
+        const t11 = this.grid[y1][x1].temperature;
+        
+        const tSrc = (t00 * (1 - wx) + t10 * wx) * (1 - wy) + 
+                     (t01 * (1 - wx) + t11 * wx) * wy;
+                     
+        // 应用平流：混合当前温度和上游温度
+        // advectionRate 控制平流强度
+        // 增加平流混合率，使流动效果更显著
+        const advectionStrength = 0.4; 
+        newTemp = newTemp * (1 - advectionStrength) + tSrc * advectionStrength;
 
         // 4. 环境冷却 (辐射散热)
         // 优化：基于 Stefan-Boltzmann 定律的简化版，温度越高散热越快
