@@ -3,109 +3,198 @@ import { generatePerlinNoise } from './perlin';
 // 类型定义
 export type CellType = 'EMPTY' | 'ALPHA' | 'BETA' | 'BIO';
 
+/**
+ * 生物属性接口
+ * 定义了物种的生存、繁衍、扩张等核心行为参数
+ */
 export interface BioAttributes {
+  /** 适宜生存的最低温度，低于此温度繁荣度增长受限 */
   minTemp: number;
+  /** 适宜生存的最高温度，高于此温度繁荣度增长受限 */
   maxTemp: number;
+  /** 极限生存最低温度，低于此温度生物开始死亡 */
   survivalMinTemp: number;
+  /** 极限生存最高温度，高于此温度生物开始死亡 */
   survivalMaxTemp: number;
+  /** 繁荣度自然增长率 (每帧) */
   prosperityGrowth: number;
+  /** 繁荣度自然衰减率 (每帧，用于环境不适宜时) */
   prosperityDecay: number;
+  /** 触发扩张行为所需的繁荣度阈值 */
   expansionThreshold: number;
+  /** 开采 Beta 晶石获得的繁荣度奖励 */
   miningReward: number;
+  /** 触发迁移行为所需的繁荣度阈值 (通常在环境恶化时) */
   migrationThreshold: number;
+  /** 受到 Alpha 晶石辐射造成的伤害值 */
   alphaRadiationDamage: number;
-  speciesId: number; // 种群ID
-  color: string; // 种群颜色
+  /** 种群唯一标识 ID (0 为人类) */
+  speciesId: number;
+  /** 种群显示颜色 (Hex 字符串) */
+  color: string;
 }
 
+/**
+ * 地图单元格接口
+ * 包含地幔、气候、晶石、生物四个层级的所有状态数据
+ */
 export interface Cell {
   x: number;
   y: number;
   
-  // 地幔层
+  // --- 地幔层 (Mantle Layer) ---
+  /** 该地块是否存在 (true: 陆地, false: 虚空) */
   exists: boolean;
+  /** 地幔能量值，决定地形扩张与缩减 */
   mantleEnergy: number;
+  /** 扩张潜力值 (暂未使用) */
   expansionPotential: number;
+  /** 扩张累积值，当能量超过阈值时累积，达到一定程度触发扩张 */
   expansionAccumulator: number;
+  /** 缩减累积值，当能量低于阈值时累积，达到一定程度触发塌陷 */
   shrinkAccumulator: number;
   
-  // 气候层
+  // --- 气候层 (Climate Layer) ---
+  /** 当前地表温度 */
   temperature: number;
+  /** 基础温度 (受地幔能量和季节影响) */
   baseTemperature: number;
+  /** 温度变化量 (用于可视化) */
   temperatureChange: number;
+  /** 是否存在雷暴天气 */
   hasThunderstorm: boolean;
   
-  // 晶石层
+  // --- 晶石层 (Crystal Layer) ---
+  /** 晶石状态: EMPTY(无), ALPHA(绿色), BETA(蓝色), BIO(生物) */
   crystalState: CellType;
-  crystalEnergy: number; // 当前帧获得的能量 (用于可视化)
-  storedEnergy: number; // 累积能量 (用于扩张)
-  isAbsorbing: boolean; // 是否正在吸收能量
-  energyFlow: { x: number, y: number, amount: number }[]; // 能量流向记录 (目标x, 目标y, 数量)
+  /** 当前帧获得的能量 (仅用于可视化效果) */
+  crystalEnergy: number;
+  /** 内部存储的能量 (用于维持生存和扩张) */
+  storedEnergy: number;
+  /** 是否正在从地幔吸收能量 (仅 Alpha 晶石) */
+  isAbsorbing: boolean;
+  /** 能量流向记录列表，用于绘制能量传输连线 */
+  energyFlow: { x: number, y: number, amount: number }[];
 
-  // 生物层 (通用)
-  prosperity: number; // 繁荣度
-  isMining: boolean; // 是否正在开采Beta晶石
-  bioAttributes?: BioAttributes; // 生物属性
+  // --- 生物层 (Bio Layer) ---
+  /** 生物繁荣度 (生命值/人口) */
+  prosperity: number;
+  /** 是否正在开采相邻的 Beta 晶石 */
+  isMining: boolean;
+  /** 生物种群属性 (仅当 crystalState === 'BIO' 时有效) */
+  bioAttributes?: BioAttributes;
 }
 
+/**
+ * 模拟参数接口
+ * 控制整个模拟系统的物理法则和数值平衡
+ */
 export interface SimulationParams {
-  // 地幔层参数
+  // --- 地幔层参数 (Mantle Layer) ---
+  /** 地幔能量更新的时间尺度 (平滑系数) */
   mantleTimeScale: number;
-  expansionThreshold: number; // 地形扩张阈值
-  shrinkThreshold: number; // 地形缩减阈值
-  mantleEnergyLevel: number; // 地幔能量等级 (倍率)
-  maxRadius: number; // 最大半径限制 (硬限制)
-  minRadius: number; // 最小半径限制 (硬限制)
+  /** 地形扩张阈值：地幔能量超过此值可能触发地形扩张 */
+  expansionThreshold: number;
+  /** 地形缩减阈值：地幔能量低于此值可能触发地形塌陷 */
+  shrinkThreshold: number;
+  /** 地幔基础能量等级 (倍率) */
+  mantleEnergyLevel: number;
+  /** 世界最大半径限制 (硬限制) */
+  maxRadius: number;
+  /** 世界最小半径限制 (硬限制，保护核心区域) */
+  minRadius: number;
+  /** 噪声扭曲速度 (影响能量场的动态变化) */
   distortionSpeed: number;
+  /** 边缘能量生成的宽度范围 */
   edgeGenerationWidth: number;
-  edgeGenerationEnergy: number; // 噪声扭曲速度
-  edgeGenerationOffset: number; // 边缘生成偏移（从边缘第几层开始）
-  edgeSupplyPointCount: number; // 边缘供给点数量
-  edgeSupplyPointSpeed: number; // 边缘供给点迁移速度
-  mantleHeatFactor: number; // 地幔热量系数 (影响地表温度)
+  /** 边缘能量生成的基础强度 */
+  edgeGenerationEnergy: number;
+  /** 边缘生成偏移量（从边缘向内第几层开始生效） */
+  edgeGenerationOffset: number;
+  /** 边缘能量供给点的数量 */
+  edgeSupplyPointCount: number;
+  /** 边缘供给点的旋转速度 */
+  edgeSupplyPointSpeed: number;
+  /** 地幔热量系数：地幔能量转化为地表温度的比例 */
+  mantleHeatFactor: number;
   
-  // 气候层参数
+  // --- 气候层参数 (Climate Layer) ---
+  /** 温度扩散率：相邻地块热量交换的速度 */
   diffusionRate: number;
+  /** 温度平流率：模拟风带来的热量移动 */
   advectionRate: number;
+  /** 雷暴触发阈值：能量积聚超过此值生成雷暴 */
   thunderstormThreshold: number;
+  /** 季节性温度变化的幅度 */
   seasonalAmplitude: number;
   
-  // 晶石层参数
+  // --- 晶石层参数 (Crystal Layer) ---
+  /** Alpha 晶石每帧消耗的基础能量 */
   alphaEnergyDemand: number;
+  /** Beta 晶石每帧消耗的基础能量 */
   betaEnergyDemand: number;
-  mantleAbsorption: number; // 吸收效率
+  /** Alpha 晶石从地幔吸收能量的效率 */
+  mantleAbsorption: number;
+  /** 雷暴击中晶石时提供的瞬间能量 */
   thunderstormEnergy: number;
-  expansionCost: number; // 扩张所需能量
-  maxCrystalEnergy: number; // 晶石能量上限
-  energySharingRate: number; // 能量共享率
-  energySharingLimit: number; // 能量共享上限 (倍率)
-  energyDecayRate: number; // 能量传输衰减率
+  /** 晶石扩张（分裂）所需的能量成本 */
+  expansionCost: number;
+  /** 晶石可存储的最大能量上限 */
+  maxCrystalEnergy: number;
+  /** Alpha 晶石网络能量共享的速率 */
+  energySharingRate: number;
+  /** 能量共享的上限倍率 (相对于自身能量) */
+  energySharingLimit: number;
+  /** 能量在传输过程中的衰减率 (损耗) */
+  energyDecayRate: number;
+  /** 生物开采 Beta 晶石的效率阈值 */
   harvestThreshold: number;
 
-  // 生物层通用参数
-  extinctionBonus: number; // 灭绝时提供的能量/繁荣度
-  competitionPenalty: number; // 种群竞争惩罚
-  mutationRate: number; // 变异概率
-  mutationStrength: number; // 变异强度 (0-1)
-  newSpeciesThreshold: number; // 成为新物种的变异阈值 (0.2)
-  minProsperityGrowth: number; // 非人类生物的最小繁荣度增长值
-  sameSpeciesBonus: number; // 相同种群邻居提供的繁荣度加成
+  // --- 生物层通用参数 (Bio Layer) ---
+  /** 生物灭绝时向周围释放的能量/繁荣度总量 */
+  extinctionBonus: number;
+  /** 不同物种相邻时的竞争惩罚系数 */
+  competitionPenalty: number;
+  /** 生物扩张时发生基因变异的概率 (0-1) */
+  mutationRate: number;
+  /** 基因变异的强度 (属性改变幅度) */
+  mutationStrength: number;
+  /** 判定为新物种的属性差异阈值 */
+  newSpeciesThreshold: number;
+  /** 非人类生物的最小繁荣度自然增长值 */
+  minProsperityGrowth: number;
+  /** 相同物种相邻提供的繁荣度协作加成 */
+  sameSpeciesBonus: number;
   
-  // 人类初始参数 (作为默认生物模板)
+  // --- 人类参数 (Human / Default Template) ---
+  /** 人类适宜生存最低温度 */
   humanMinTemp: number;
+  /** 人类适宜生存最高温度 */
   humanMaxTemp: number;
+  /** 人类极限生存最低温度 */
   humanSurvivalMinTemp: number;
+  /** 人类极限生存最高温度 */
   humanSurvivalMaxTemp: number;
+  /** 人类繁荣度自然增长率 */
   humanProsperityGrowth: number;
+  /** 人类繁荣度自然衰减率 */
   humanProsperityDecay: number;
+  /** 人类扩张阈值 */
   humanExpansionThreshold: number;
+  /** 人类开采奖励 */
   humanMiningReward: number;
+  /** 人类迁移阈值 */
   humanMigrationThreshold: number;
+  /** Alpha 辐射对人类造成的伤害 */
   alphaRadiationDamage: number;
+  /** 人类强制重生点坐标 */
   humanSpawnPoint?: {x: number, y: number};
-  humanRespawnDelay: number; // 人类重生延迟 (步数)
-  bioAutoSpawnCount: number; // 自动生成物种的触发数量阈值
-  bioAutoSpawnInterval: number; // 自动生成物种的时间间隔
+  /** 人类灭绝后的重生延迟 (步数) */
+  humanRespawnDelay: number;
+  /** 自动生成新物种的触发阈值 (当物种总数少于此值) */
+  bioAutoSpawnCount: number;
+  /** 自动生成新物种的时间间隔 (步数) */
+  bioAutoSpawnInterval: number;
 }
 
 export const DEFAULT_PARAMS: SimulationParams = {
@@ -438,6 +527,14 @@ export class SimulationEngine {
     }
   }
   
+  /**
+   * 更新气候层 (Climate Layer)
+   * 负责计算地表温度分布和天气现象
+   * 核心逻辑：
+   * 1. 基础温度：由地幔能量加热，并叠加季节性波动
+   * 2. 热力学过程：模拟热量的扩散（传导）和平流（风）
+   * 3. 灾害天气：在高能且温度梯度大的区域生成雷暴
+   */
   updateClimateLayer() {
     const { diffusionRate, advectionRate, thunderstormThreshold, mantleHeatFactor } = this.params;
     
@@ -448,21 +545,24 @@ export class SimulationEngine {
         const cell = this.grid[y][x];
         if (!cell.exists) continue;
         
-        // 扩散
+        // 1. 热扩散 (传导)
+        // 温度趋向于周围环境的平均值
         const neighbors = this.getNeighbors(x, y);
         const avgTemp = neighbors.reduce((sum, n) => sum + n.temperature, 0) / neighbors.length;
         let newTemp = cell.temperature * (1 - diffusionRate) + avgTemp * diffusionRate;
         
-        // 地幔加热
+        // 2. 地幔加热
+        // 地幔能量转化为热量，作为目标温度
         const targetTemp = -100 + (cell.mantleEnergy / 100) * mantleHeatFactor;
         newTemp = newTemp * 0.9 + targetTemp * 0.1;
         
-        // 环境冷却
+        // 3. 环境冷却 (辐射散热)
         newTemp -= 0.5;
         
         newTemps[y][x] = newTemp;
         
-        // 雷暴判定
+        // 4. 雷暴判定
+        // 触发条件：局部温度梯度大 (对流强)
         const tempDiff = Math.abs(cell.temperature - avgTemp);
         if (tempDiff > thunderstormThreshold && Math.random() < 0.1) {
             cell.hasThunderstorm = true;
@@ -482,6 +582,16 @@ export class SimulationEngine {
     }
   }
   
+  /**
+   * 更新晶石层 (Crystal Layer)
+   * 负责晶石的能量代谢、网络传输和生长繁殖
+   * 核心逻辑：
+   * 1. 能量获取：Alpha 晶石从地幔和雷暴中吸收能量
+   * 2. 能量消耗：所有晶石每帧消耗维持能量
+   * 3. 状态转化：Alpha 能量耗尽退化为 Beta，Beta 无法逆向转化
+   * 4. 能量网络：Alpha 晶石之间自动平衡能量 (高能流向低能)
+   * 5. 晶石扩张：能量充足的 Alpha 晶石向周围空地繁殖新的 Alpha 晶石
+   */
   updateCrystalLayer() {
     const { 
         alphaEnergyDemand, betaEnergyDemand, mantleAbsorption, 
@@ -500,7 +610,7 @@ export class SimulationEngine {
         cell.isAbsorbing = false;
         cell.crystalEnergy = 0;
         
-        // 吸收地幔能量
+        // 吸收地幔能量 (仅 Alpha 晶石具备此能力)
         if (cell.mantleEnergy > 10) {
             const absorbed = cell.mantleEnergy * mantleAbsorption;
             cell.storedEnergy += absorbed;
@@ -508,33 +618,35 @@ export class SimulationEngine {
             cell.isAbsorbing = true;
         }
         
-        // 雷暴充能
+        // 雷暴充能 (雷暴天气下获得额外能量补给)
         if (cell.hasThunderstorm) {
             cell.storedEnergy += thunderstormEnergy;
             cell.crystalEnergy += thunderstormEnergy;
         }
         
-        // 维持消耗
+        // 维持消耗 (生命维持成本)
         const demand = cell.crystalState === 'ALPHA' ? alphaEnergyDemand : betaEnergyDemand;
         cell.storedEnergy -= demand;
         
-        // 能量上限
+        // 能量上限截断
         if (cell.storedEnergy > maxCrystalEnergy) {
             cell.storedEnergy = maxCrystalEnergy;
         }
         
-        // 能量枯竭
+        // 能量枯竭处理
         if (cell.storedEnergy <= 0) {
             if (cell.crystalState === 'ALPHA') {
+                // Alpha 晶石能量耗尽退化为 Beta 晶石
                 cell.crystalState = 'BETA';
                 cell.storedEnergy = 0;
             } 
-            // Beta 晶石不会因为能量耗尽而消失，只能被生物开采
+            // Beta 晶石不会因为能量耗尽而消失，只能被生物开采或随地形塌陷消失
         }
       }
     }
 
     // 2. 能量共享 (ALPHA 晶石网络)
+    // 重置能量流向记录
     for (let y = 0; y < this.height; y++) {
         for (let x = 0; x < this.width; x++) {
             this.grid[y][x].energyFlow = [];
@@ -551,22 +663,27 @@ export class SimulationEngine {
             const neighbors = this.getNeighbors(x, y);
             const alphaNeighbors = neighbors.filter(n => n.crystalState === 'ALPHA');
 
+            // 向能量较低的邻居输送能量
             for (const neighbor of alphaNeighbors) {
                 if (cell.storedEnergy > neighbor.storedEnergy) {
                     const diff = cell.storedEnergy - neighbor.storedEnergy;
                     let transferAmount = diff * 0.1 * energySharingRate; 
                     
+                    // 限制单次传输量，防止震荡
                     if (transferAmount > 5) transferAmount = 5;
                     
+                    // 确保传输后不会导致自身能量低于对方
                     if (cell.storedEnergy - transferAmount < neighbor.storedEnergy + transferAmount) {
                         transferAmount = diff * 0.4;
                     }
 
                     if (transferAmount > 0.1) {
                         energyChanges[y][x] -= transferAmount;
+                        // 传输损耗 (Decay)
                         const receivedAmount = transferAmount * (1 - energyDecayRate);
                         energyChanges[neighbor.y][neighbor.x] += receivedAmount;
 
+                        // 记录流向用于可视化
                         cell.energyFlow.push({
                             x: neighbor.x,
                             y: neighbor.y,
@@ -578,7 +695,7 @@ export class SimulationEngine {
         }
     }
 
-    // 应用能量共享
+    // 应用能量共享结果
     for (let y = 0; y < this.height; y++) {
         for (let x = 0; x < this.width; x++) {
             const cell = this.grid[y][x];
@@ -590,10 +707,11 @@ export class SimulationEngine {
         }
     }
 
-    // 3. 晶石扩张
+    // 3. 晶石扩张 (繁殖)
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         const cell = this.grid[y][x];
+        // 只有能量充足的 Alpha 晶石才能扩张
         if (cell.crystalState === 'ALPHA' && cell.storedEnergy > expansionCost * 2) {
             const neighbors = this.getNeighbors(x, y);
             const emptyNeighbors = neighbors.filter(n => n.exists && n.crystalState === 'EMPTY');
@@ -610,12 +728,12 @@ export class SimulationEngine {
       }
     }
     
-    // 应用扩张
+    // 应用扩张结果
     for (const change of crystalChanges) {
         const cell = this.grid[change.y][change.x];
         if (cell.crystalState === 'EMPTY') {
             cell.crystalState = change.type;
-            cell.storedEnergy = 10;
+            cell.storedEnergy = 10; // 初始能量
         }
     }
   }
