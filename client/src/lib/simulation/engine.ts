@@ -431,18 +431,22 @@ export class SimulationEngine {
             // 计算供给点的影响
             let maxInfluence = 0;
             for (const point of this.edgeSupplyPoints) {
-                let diff = Math.abs(normalizedAngle - point.angle);
+                // 应用偏移量 edgeGenerationOffset (弧度制)
+                // edgeGenerationOffset 是一个角度偏移，使得供给点的位置发生整体旋转
+                const offsetAngle = point.angle + (edgeGenerationOffset || 0);
+                let effectiveAngle = offsetAngle;
+                
+                // 归一化角度到 0-2PI
+                while (effectiveAngle < 0) effectiveAngle += Math.PI * 2;
+                while (effectiveAngle > Math.PI * 2) effectiveAngle -= Math.PI * 2;
+
+                let diff = Math.abs(normalizedAngle - effectiveAngle);
                 if (diff > Math.PI) diff = Math.PI * 2 - diff;
                 
                 // 供给点影响范围 (PI/4 = 45度)
                 if (diff < Math.PI / 4) {
                     // 角度影响因子 (余弦衰减)
                     const angleInfluence = Math.cos(diff * 4); 
-                    
-                    // 距离影响因子 (基于edgeGenerationOffset和edgeGenerationWidth)
-                    // 假设边缘是在当前半径附近
-                    // 我们需要找到当前角度上的最大半径
-                    // 这里简化处理：直接使用当前点是否为边缘点
                     
                     maxInfluence = Math.max(maxInfluence, angleInfluence);
                 }
