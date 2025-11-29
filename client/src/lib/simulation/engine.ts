@@ -206,6 +206,8 @@ export interface SimulationParams {
   bioAutoSpawnCount: number;
   /** 自动生成新物种的时间间隔 (步数) */
   bioAutoSpawnInterval: number;
+  /** 聚落扩张时生成迁徙者的概率 (0-1)，否则生成新聚落 */
+  migrantExpansionProb: number;
 }
 
 export const DEFAULT_PARAMS: SimulationParams = {
@@ -265,6 +267,7 @@ export const DEFAULT_PARAMS: SimulationParams = {
   humanRespawnDelay: 20,
   bioAutoSpawnCount: 5,
   bioAutoSpawnInterval: 10,
+  migrantExpansionProb: 0.8,
 };
 
 export class SimulationEngine {
@@ -919,13 +922,9 @@ export class SimulationEngine {
                     continue;
                 }
 
-                // E. 扩张 (生成新聚落)
-                if (newProsperity > attrs.expansionThreshold) {
-                    const emptyNeighbors = neighbors.filter(n => n.exists && n.crystalState === 'EMPTY');
-                    if (emptyNeighbors.length > 0) {
-                        const target = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
-                        
-                        // 变异逻辑
+                    // E. 扩张 (生成新聚落或迁徙者)
+                    if (newProsperity > attrs.expansionThreshold) {
+                        // 变异逻辑 (无论生成聚落还是迁徙者，都可能发生变异)
                         let newAttrs = {...attrs};
                         let isNewSpecies = false;
                         const keys: (keyof BioAttributes)[] = ['minTemp', 'maxTemp', 'prosperityGrowth', 'prosperityDecay', 'expansionThreshold', 'miningReward', 'migrationThreshold'];
@@ -945,14 +944,60 @@ export class SimulationEngine {
                             newAttrs.speciesId = Math.floor(Math.random() * 100000);
                             newAttrs.color = `hsl(${Math.random() * 360}, 70%, 50%)`;
                         }
-                        
-                        changes.push({
-                            x: target.x, y: target.y, type: 'NEW_BIO', 
-                            value: { prosperity: 30, attrs: newAttrs }
-                        });
-                        changes.push({x, y, type: 'PROSPERITY', value: newProsperity - 30});
+
+                        // 决策：生成新聚落还是迁徙者
+                        // 默认大概率生成迁徙者 (例如 80%)，小概率直接扩张为邻近聚落 (20%)
+                        const migrantProbability = this.params.migrantExpansionProb; 
+
+                        if (Math.random() < migrantProbability) {
+                            // 生成迁徙者 (Migrant)
+                            // 迁徙者生成在当前格子，随后会移动
+                            // 如果当前格子已有迁徙者，则尝试生成在邻居
+                            let targetX = x;
+                            let targetY = y;
+                            
+                            if (cell.migrant) {
+                                const validNeighbors = neighbors.filter(n => n.exists && !n.migrant);
+                                if (validNeighbors.length > 0) {
+                                    const target = validNeighbors[Math.floor(Math.random() * validNeighbors.length)];
+                                    targetX = target.x;
+                                    targetY = target.y;
+                                } else {
+                                    // 无处生成，放弃本次扩张
+                                    targetX = -1;
+                                }
+                            }
+
+                            if (targetX !== -1) {
+                                changes.push({
+                                    x: targetX, y: targetY, type: 'MIGRANT_ADD', 
+                                    value: { prosperity: 30, attrs: newAttrs }
+                                });
+                                changes.push({x, y, type: 'PROSPERITY', value: newProsperity - 30});
+                            }
+
+                        } else {
+                            // 生成新聚落 (Settlement)
+                            // 必须有空的邻居
+                            const emptyNeighbors = neighbors.filter(n => n.exists && n.crystalState === 'EMPTY');
+                            if (emptyNeighbors.length > 0) {
+                                const target = emptyNeighbors[Math.floor(Math.random() * emptyNeighbors.length)];
+                                changes.push({
+                                    x: target.x, y: target.y, type: 'NEW_BIO', 
+                                    value: { prosperity: 30, attrs: newAttrs }
+                                });
+                                changes.push({x, y, type: 'PROSPERITY', value: newProsperity - 30});
+                            } else {
+                                // 如果没有空位生成聚落，则回退尝试生成迁徙者
+                                // 或者直接放弃，这里选择尝试生成迁徙者以保持扩张压力
+                                changes.push({
+                                    x, y, type: 'MIGRANT_ADD', 
+                                    value: { prosperity: 30, attrs: newAttrs }
+                                });
+                                changes.push({x, y, type: 'PROSPERITY', value: newProsperity - 30});
+                            }
+                        }
                     }
-                }
 
                 // F. 迁移转化 (聚落 -> 迁徙者)
                 // 当环境不适宜且无法维持聚落时，转化为迁徙者

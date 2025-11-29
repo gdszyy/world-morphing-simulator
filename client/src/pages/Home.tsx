@@ -70,6 +70,7 @@ const PARAM_INFO: Record<keyof SimulationParams, { desc: string; impact: string 
   humanRespawnDelay: { desc: "人类重生延迟", impact: "人类灭绝后等待多少步才重生" },
   bioAutoSpawnCount: { desc: "自动生成阈值", impact: "当物种数量少于此值时触发自动生成" },
   bioAutoSpawnInterval: { desc: "自动生成间隔", impact: "每隔多少步尝试自动生成新物种" },
+  migrantExpansionProb: { desc: "迁徙生成概率", impact: "聚落扩张时生成迁徙者而非新聚落的概率" },
 } as Record<keyof SimulationParams, { desc: string; impact: string; }>;
 
 export default function Home() {
@@ -977,6 +978,7 @@ export default function Home() {
                   <ParamControl label="同种群加成" paramKey="sameSpeciesBonus" min={0} max={10} step={0.1} />
                   <ParamControl label="自动生成阈值" paramKey="bioAutoSpawnCount" min={0} max={20} step={1} />
                   <ParamControl label="自动生成间隔" paramKey="bioAutoSpawnInterval" min={1} max={100} step={1} />
+                  <ParamControl label="迁徙生成概率" paramKey="migrantExpansionProb" min={0} max={1} step={0.05} />
                 </div>
             </TabsContent>
           </Tabs>
