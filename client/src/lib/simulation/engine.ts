@@ -738,6 +738,17 @@ export class SimulationEngine {
     }
   }
 
+  /**
+   * 更新生物层 (Bio Layer)
+   * 负责生物的生存、繁衍、变异和灭绝
+   * 核心逻辑：
+   * 1. 自动生成：当物种稀少时，系统自动投放新物种
+   * 2. 人类重生：人类灭绝后，经过固定延迟强制重生
+   * 3. 生存判定：基于温度适应性计算繁荣度增减
+   * 4. 竞争与开采：不同物种相邻竞争，生物开采 Beta 晶石
+   * 5. 扩张与变异：繁荣度达标后向外扩张，并概率产生新物种
+   * 6. 灭绝：繁荣度归零死亡，能量散逸给周围环境 (不含地幔)
+   */
   updateBioLayer() {
     const {
         extinctionBonus, competitionPenalty, mutationRate, mutationStrength, newSpeciesThreshold
@@ -798,7 +809,6 @@ export class SimulationEngine {
         }
     } else {
         this.bioExtinctionStep = null;
-        this.isFirstSpawn = false;
     }
 
     // 3. 更新生物状态
